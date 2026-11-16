@@ -14,6 +14,7 @@ class StubAuto:
     def installed_apps(self): return ["Google Chrome", "Slack"]
     def clickable_elements(self): return [Element("Submit", "Button"), Element("Cancel", "Button")]
     def get_volume(self): return 40
+    def new_tab_target(self): return "Safari"
     def say(self, text): pass
 
     def __getattr__(self, name):
@@ -78,3 +79,17 @@ def test_parsers():
     assert parse.keys("Press Command-Shift-T.") == ["cmd", "shift", "t"]
     assert parse.number("set volume to twenty five percent") == 25
     assert parse.after("Search for pizza near me.", "search for") == "pizza near me"
+
+
+def test_parsing_survives_whisper_punctuation():  # issue #13
+    assert parse.after("Type. Hello guys.", "type", keep_end=True) == "Hello guys."
+    assert parse.after("type see you tomorrow", "type", keep_end=True) == "see you tomorrow"
+    assert parse.after("Web Search. Banana.", "web search", "search") == "Banana"
+    assert parse.after("Web search banana", "web search", "search") == "banana"
+    assert parse.after("Open. Safari.", "open") == "Safari"
+    assert parse.keys("Press. Enter.") == ["enter"]
+
+
+def test_new_tab_names_its_target_app():  # issue #14
+    auto, _ = run("new tab", StubJev("new_tab", 0.99))
+    assert auto.calls == [("new_tab", ("Safari",))]

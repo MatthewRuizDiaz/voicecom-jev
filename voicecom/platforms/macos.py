@@ -9,7 +9,7 @@ from pathlib import Path
 
 import ApplicationServices as AX
 import Quartz
-from AppKit import NSScreen, NSWorkspace
+from AppKit import NSURL, NSScreen, NSWorkspace
 
 from .base import Automation, Element
 
@@ -39,6 +39,9 @@ CLICKABLE_ROLES = {
 }
 CHROMIUM_HINTS = ("chrome", "chromium", "brave", "edge", "arc", "electron", "slack", "discord",
                   "code", "cursor", "notion", "spotify", "vivaldi", "opera")
+
+BROWSERS = ("safari", "chrome", "chromium", "brave", "arc", "firefox", "edge", "opera", "vivaldi",
+            "orion", "zen", "dia", "duckduckgo")
 
 APP_DIRS = ["/Applications", "/Applications/Utilities", "/System/Applications",
             "/System/Applications/Utilities", str(Path.home() / "Applications")]
@@ -214,8 +217,39 @@ class MacAutomation(Automation):
     def open_url(self, url: str) -> None:
         subprocess.run(["open", url], check=False)
 
-    def new_tab(self) -> None:
-        self.press(["cmd", "t"])
+    def _menu_item(self, app_name: str, title: str):
+        """Find a menu bar item by title (e.g. "New Tab") in a running app, or None."""
+        for app in NSWorkspace.sharedWorkspace().runningApplications():
+            if str(app.localizedName() or "") != app_name:
+                continue
+            bar = _attr(AX.AXUIElementCreateApplication(app.processIdentifier()), "AXMenuBar")
+            for top in list(_attr(bar, "AXChildren") or []) if bar is not None else []:
+                for menu in list(_attr(top, "AXChildren") or []):
+                    for item in list(_attr(menu, "AXChildren") or []):
+                        if _attr(item, "AXTitle") == title:
+                            return item
+        return None
+
+    def default_browser(self) -> str:
+        url = NSWorkspace.sharedWorkspace().URLForApplicationToOpenURL_(NSURL.URLWithString_("https://example.com"))
+        return Path(str(url.path())).stem if url else "Safari"
+
+    def new_tab_target(self) -> str:
+        front = self.frontmost_app()
+        if any(b in front.lower() for b in BROWSERS) or self._menu_item(front, "New Tab") is not None:
+            return front
+        return self.default_browser()
+
+    def new_tab(self, app: str) -> None:
+        if app != self.frontmost_app():
+            subprocess.run(["open", "-a", app], check=False)
+            deadline = time.time() + 3
+            while self.frontmost_app() != app and time.time() < deadline:
+                time.sleep(0.05)
+            time.sleep(0.15)  # let the window take keyboard focus
+        item = self._menu_item(app, "New Tab")
+        if item is None or AX.AXUIElementPerformAction(item, "AXPress") != 0:
+            self.press(["cmd", "t"])
 
     def close_tab(self) -> None:
         self.press(["cmd", "w"])

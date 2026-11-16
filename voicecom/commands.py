@@ -74,7 +74,7 @@ def press_keys(ctx: Ctx):
 @command("type_text", "Type out specific text the user dictates after the word 'type' or 'write'. "
          "E.g. 'type hello world', 'write see you tomorrow'.")
 def type_text(ctx: Ctx):
-    text = parse.after(ctx.transcript.strip(), "type out", "type", "write", "enter the text")
+    text = parse.after(ctx.transcript, "type out", "type", "write", "enter the text", keep_end=True)
     if text:
         return Plan(f"type {text!r}", lambda: ctx.auto.type_text(text))
 
@@ -125,7 +125,8 @@ def mute(ctx: Ctx):
 # ---------------------------------------------------------------- browser
 @command("new_tab", "Open a new browser or editor tab.")
 def new_tab(ctx: Ctx):
-    return Plan("new tab", ctx.auto.new_tab)
+    app = ctx.auto.new_tab_target()  # the front app if it has tabs, otherwise the default browser
+    return Plan(f"new tab in {app}", lambda: ctx.auto.new_tab(app))
 
 
 @command("close_tab", "Close the current tab.")
@@ -136,7 +137,8 @@ def close_tab(ctx: Ctx):
 @command("web_search", "Search the web for something. E.g. 'search for pizza near me', "
          "'google how tall is Everest', 'look up the weather'.")
 def web_search(ctx: Ctx):
-    q = parse.after(ctx.transcript, "search the web for", "search for", "search", "google",
+    q = parse.after(ctx.transcript, "do a web search for", "web search for", "web search", "search the web for",
+                    "search for", "search", "google",
                     "look up", "find me", "find")
     if q:
         url = f"https://www.google.com/search?q={quote_plus(q)}"

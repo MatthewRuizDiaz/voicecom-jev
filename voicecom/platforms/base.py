@@ -65,7 +65,11 @@ class Automation(ABC):
     def open_url(self, url: str) -> None: ...
 
     @abstractmethod
-    def new_tab(self) -> None: ...
+    def new_tab_target(self) -> str:
+        """The app a new tab should open in: the front app if it has tabs, else the default browser."""
+
+    @abstractmethod
+    def new_tab(self, app: str) -> None: ...
 
     @abstractmethod
     def close_tab(self) -> None: ...
@@ -75,7 +79,7 @@ class Automation(ABC):
         pass
 
 
-READ_ONLY = {"frontmost_app", "installed_apps", "clickable_elements", "get_volume", "say"}
+READ_ONLY = {"frontmost_app", "installed_apps", "clickable_elements", "get_volume", "new_tab_target", "say"}
 
 
 class DryRun:

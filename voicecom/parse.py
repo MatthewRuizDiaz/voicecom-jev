@@ -39,13 +39,20 @@ def number(text: str) -> int | None:
     return total if found else None
 
 
-def after(text: str, *leads: str) -> str:
-    """Text after the first matching lead phrase, e.g. after("Type hello there", "type") -> "hello there"."""
-    t = clean(text)
+def after(text: str, *leads: str, keep_end: bool = False) -> str:
+    """Text after the first matching lead phrase, e.g. after("Type hello there", "type") -> "hello there".
+
+    Whisper often writes a pause after the command word as punctuation ("Type. Hello guys."), so any
+    punctuation between the lead and the rest is skipped. keep_end keeps the speaker's own sentence
+    punctuation at the end (for text that gets typed out).
+    """
+    t = re.sub(r"\s+", " ", text.strip()) if keep_end else clean(text)
     for lead in sorted(leads, key=len, reverse=True):
-        m = re.match(rf"^(?:please\s+)?(?:can you\s+)?{lead}\b[\s,:]*(.*)$", t, re.IGNORECASE)
+        words = r"[\s.,:;!?-]+".join(map(re.escape, lead.split()))  # "web search" also matches "Web. Search"
+        m = re.match(rf"^(?:please[\s,]+)?(?:can you\s+)?{words}\b[\s.,:;!?-]*(.*)$", t, re.IGNORECASE)
         if m:
-            return m.group(1).strip()
+            rest = m.group(1).strip()
+            return rest
     return t
 
 
