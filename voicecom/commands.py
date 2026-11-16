@@ -11,30 +11,43 @@ from .registry import Ctx, Plan, command
 DICTATE = "dictate"
 
 
-def _app_name(ctx: Ctx, *leads: str) -> str | None:
-    """Prefer the app Jev picked from the installed list; fall back to the spoken words."""
-    if ctx.app and ctx.app_p >= 0.4:
-        return ctx.app
+def _app_name(ctx: Ctx, *leads: str) -> tuple[str | None, bool]:
+    """Resolve which app the user named. Returns (name, guessed); guessed means confirm first.
+
+    1. Jev picked an installed app confidently -> use it.
+    2. The spoken name is an installed app ("open safari") -> use it.
+    3. Jev leans toward an app ("open my email" -> Mail at about 0.2) -> Confirm "open Mail?"
+       instead of opening an app literally named "my email".
+    4. Otherwise the spoken words; opening fails clearly if no such app is installed.
+    """
+    if ctx.app and ctx.app_p >= 0.7:
+        return ctx.app, False
     spoken = parse.after(ctx.transcript, *leads)
     spoken = re.sub(r"^(the\s+)?(app\s+)?", "", spoken, flags=re.I)
     spoken = re.sub(r"\s+(app|application)$", "", spoken, flags=re.I)
-    return spoken or None
+    installed = {a.lower(): a for a in ctx.apps}
+    if spoken and spoken.lower() in installed:
+        return installed[spoken.lower()], False
+    if ctx.app and ctx.app_p >= 0.15:
+        return ctx.app, True
+    return spoken or None, False
 
 
 # ---------------------------------------------------------------- apps
 @command("open_app", "Open, launch, start, or switch to an application. E.g. 'open Chrome', "
          "'switch to Slack', 'go to Spotify'.", uses_app=True)
 def open_app(ctx: Ctx):
-    name = _app_name(ctx, "open up", "open", "launch", "start", "switch to", "go to", "bring up", "show")
+    name, guessed = _app_name(ctx, "open up", "open", "launch", "start", "switch to", "go to", "bring up", "show")
     if name:
-        return Plan(f"open {name}", lambda: ctx.auto.open_app(name))
+        return Plan(f"open {name}", lambda: ctx.auto.open_app(name), confirm=guessed)
 
 
 @command("quit_app", "Quit or close a whole application. E.g. 'quit Spotify', 'close Slack completely'.",
          uses_app=True)
 def quit_app(ctx: Ctx):
-    name = _app_name(ctx, "quit", "close", "exit", "kill") or ctx.auto.frontmost_app()
-    return Plan(f"quit {name}", lambda: ctx.auto.quit_app(name))
+    name, guessed = _app_name(ctx, "quit", "close", "exit", "kill")
+    name = name or ctx.auto.frontmost_app()
+    return Plan(f"quit {name}", lambda: ctx.auto.quit_app(name), confirm=guessed)
 
 
 # ---------------------------------------------------------------- pointer / keyboard

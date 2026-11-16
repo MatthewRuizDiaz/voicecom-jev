@@ -26,6 +26,7 @@ class Decision:
     p: float  # probability of the chosen command (what the gate thresholds on)
     confidence: float  # Jev's spread-based confidence, logged for reference
     destructive: float  # Noul: probability the request is destructive
+    meaningful: float  # Noul: probability this is real speech, not filler or noise
     app: str | None
     app_p: float
     latency: float
@@ -78,6 +79,14 @@ class Jev:
                         false="Opens, moves, scrolls, searches, changes volume, or types",
                     ),
                 ),
+                "meaningful": Noul(
+                    instructions="This is a real request or sentence the speaker means, not just filler "
+                                 "sounds, hesitation, or noise.",
+                    criteria=NoulCriteria(
+                        true="A command, a question, or a sentence with real words, even a one-word command",
+                        false="Only filler like uh, um, hmm, er, a cough, or a stray word fragment",
+                    ),
+                ),
                 # Speculative: only read when the chosen command takes an app.
                 "app": Choice(
                     instructions="Which application does the spoken request name, if any?",
@@ -87,13 +96,18 @@ class Jev:
         )
         latency = time.perf_counter() - t
         cmd, dest, app = r.answers["command"], r.answers["destructive"], r.answers["app"]
+        # The best real app, even when "no app named" wins: "open my email" puts most weight on
+        # no_app_named but still leans toward Mail, and the command code decides what to do with that.
+        real = {k: float(v) for k, v in app.probabilities.items() if k != NO_APP}
+        best_app = max(real, key=real.get) if real else None
         return Decision(
             command=cmd.choice,
             p=float(cmd.probabilities[cmd.choice]),
             confidence=float(cmd.confidence),
             destructive=float(dest.noul),
-            app=None if app.choice == NO_APP else app.choice,
-            app_p=float(app.probabilities[app.choice]),
+            meaningful=float(r.answers["meaningful"].noul),
+            app=best_app,
+            app_p=real.get(best_app, 0.0),
             latency=latency,
         )
 

@@ -17,7 +17,8 @@ class Thresholds:
     act: float = 0.80        # command probability needed to run without asking
     ignore: float = 0.40     # below this, do nothing
     destructive: float = 0.50  # Noul above this always asks first
-    element_act: float = 0.70
+    meaningful: float = 0.30   # Noul below this is filler ("uh", "hmm") and is ignored
+    element_act: float = 0.70   # click element probability to run
     element_ignore: float = 0.30
     yes: float = 0.70        # confirmation Noul
 
@@ -51,7 +52,7 @@ class Engine:
         d = self.jev.decide(transcript, front, self.apps)
 
         cmd = REGISTRY[d.command]
-        ctx = Ctx(transcript, self.auto, self.jev, app=d.app, app_p=d.app_p)
+        ctx = Ctx(transcript, self.auto, self.jev, app=d.app, app_p=d.app_p, apps=self.apps)
         if d.command == "click" and elements_f is not None:
             ctx.elements = elements_f.result()
 
@@ -60,6 +61,9 @@ class Engine:
         if cmd.uses_app and d.app:
             head += f" app={d.app}({d.app_p:.2f})"
 
+        if d.meaningful < self.t.meaningful:
+            head += f" meaningful={d.meaningful:.2f}"
+            return self._log(head, f"{GREY}IGNORED (filler){RESET}", stt_s, d.latency, start)
         if d.p < self.t.ignore:
             return self._log(head, f"{GREY}IGNORED (unsure){RESET}", stt_s, d.latency, start)
 
@@ -71,7 +75,8 @@ class Engine:
             if plan.p < self.t.element_ignore:
                 return self._log(head, f"{GREY}IGNORED ({plan.summary}){RESET}", stt_s, d.latency, start)
 
-        unsure = d.p < self.t.act or (plan.p is not None and plan.p < self.t.element_act)
+        unsure = (d.p < self.t.act or (plan.p is not None and plan.p < self.t.element_act)
+                  or plan.confirm)
         risky = d.destructive >= self.t.destructive
         if unsure or risky:
             why = "destructive" if risky else "unsure"

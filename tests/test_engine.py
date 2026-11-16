@@ -22,8 +22,9 @@ class StubAuto:
 
 
 class StubJev:
-    def __init__(self, command, p, destructive=0.0, app=None, element=("Submit", 0.95), yes=0.95):
-        self.d = Decision(command, p, p, destructive, app, 0.9 if app else 0.0, 0.1)
+    def __init__(self, command, p, destructive=0.0, app=None, element=("Submit", 0.95), yes=0.95,
+                 meaningful=0.99, app_p=None):
+        self.d = Decision(command, p, p, destructive, meaningful, app, app_p if app_p is not None else (0.9 if app else 0.0), 0.1)
         self.element, self.yes = element, yes
 
     def decide(self, *a): return self.d
@@ -93,3 +94,18 @@ def test_parsing_survives_whisper_punctuation():  # issue #13
 def test_new_tab_names_its_target_app():  # issue #14
     auto, _ = run("new tab", StubJev("new_tab", 0.99))
     assert auto.calls == [("new_tab", ("Safari",))]
+
+
+def test_filler_is_ignored():  # issue #11
+    auto, eng = run("uh hmm", StubJev("dictate", 1.0, meaningful=0.05))
+    assert auto.calls == [] and eng.pending is None
+
+
+def test_unsure_app_pick_confirms_instead_of_literal_name():  # issue #12
+    auto, eng = run("open my email", StubJev("open_app", 0.98, app="Mail", app_p=0.2))
+    assert auto.calls == [] and eng.pending and "Mail" in eng.pending[1]
+
+
+def test_spoken_installed_name_wins_over_weak_pick():  # issue #12
+    auto, _ = run("open slack", StubJev("open_app", 0.98, app="Google Chrome", app_p=0.4))
+    assert auto.calls == [("open_app", ("Slack",))]

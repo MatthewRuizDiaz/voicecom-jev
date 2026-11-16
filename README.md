@@ -18,6 +18,7 @@ hold Right Option ──► record mic ──► faster-whisper (local) ──�
             ┌───────────────────── one Jev request ─────────────────┤
             │  Choice  "command":     which of 18 commands?         │
             │  Noul    "destructive": would this lose work?         │
+            │  Noul    "meaningful":  real speech, or "uh"/"hmm"?   │
             │  Choice  "app":         which installed app is named? │  (speculative)
             └───────────────────────────────────────────────────────┘
                                     │
@@ -41,7 +42,8 @@ Each command prints one log line: transcript, chosen command, its probability an
 - **Choice for command selection.** The registry's names and descriptions become the options of one Choice question, including a `dictate` option for "not a command, just type what I said". The state is the transcript plus the name of the frontmost app.
 - **Noul for the destructive check.** In the same request, a Noul question asks whether carrying out the request would close, quit, delete, send or discard something. Its value is the probability of "yes".
 - **Choice for element selection.** For "click X", the app reads the foreground window's accessibility tree, lists the labeled buttons, links, tabs and menu items, and asks a second Choice question: which one the user means. A `none_of_these` option lets Jev say nothing matches.
-- **Speculative app Choice.** The first request also asks which installed app is named. That answer is only read when the command takes an app (`open_app`, `quit_app`), and it costs no extra round trip.
+- **Noul for filler.** Another Noul in the same request asks whether the Utterance is real speech or just "uh", "hmm", or a cough. Below 0.30 it's ignored, so a stray key press never types noise.
+- **Speculative app Choice.** The first request also asks which installed app is named. That answer is only read when the command takes an app (`open_app`, `quit_app`), and it costs no extra round trip. If you name an app vaguely ("open my email"), Jev's leaning (Mail) is offered as a question ("open Mail?") rather than opening an app literally named "my email".
 - **Confidence thresholds gate everything.** The gate reads the probability of the chosen option, as the TypeSafe docs recommend for Choice answers:
 
   | Condition | Result |

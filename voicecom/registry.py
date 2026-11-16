@@ -19,6 +19,7 @@ class Ctx:
     jev: "Jev"
     app: str | None = None  # app name Jev picked in the same request, if any
     app_p: float = 0.0
+    apps: list[str] = field(default_factory=list)  # installed app names
     elements: list | None = None  # foreground-window elements, prefetched while Jev runs
 
 
@@ -29,6 +30,7 @@ class Plan:
     summary: str
     do: Callable[[], None]
     p: float | None = None  # extra probability from a second Jev call (e.g. which element)
+    confirm: bool = False  # the command itself wants a yes first (e.g. it guessed the app)
     extra: dict = field(default_factory=dict)
 
 
