@@ -9,7 +9,7 @@ from pathlib import Path
 
 import ApplicationServices as AX
 import Quartz
-from AppKit import NSURL, NSScreen, NSWorkspace
+from AppKit import NSURL, NSDate, NSRunLoop, NSScreen, NSWorkspace
 
 from .base import Automation, Element
 
@@ -65,6 +65,9 @@ class MacAutomation(Automation):
 
     # ---------- read-only ----------
     def _front(self):
+        # NSWorkspace only learns about app switches when the run loop runs, and this process never
+        # runs one; without this pump the answer stays stuck on whatever was in front at startup.
+        NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.01))
         return NSWorkspace.sharedWorkspace().frontmostApplication()
 
     def frontmost_app(self) -> str:
@@ -245,8 +248,8 @@ class MacAutomation(Automation):
             subprocess.run(["open", "-a", app], check=False)
             deadline = time.time() + 3
             while self.frontmost_app() != app and time.time() < deadline:
-                time.sleep(0.05)
-            time.sleep(0.15)  # let the window take keyboard focus
+                time.sleep(0.02)
+            time.sleep(0.1)  # let the window take keyboard focus
         item = self._menu_item(app, "New Tab")
         if item is None or AX.AXUIElementPerformAction(item, "AXPress") != 0:
             self.press(["cmd", "t"])
