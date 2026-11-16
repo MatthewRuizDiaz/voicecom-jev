@@ -15,4 +15,14 @@ def get_automation(warn: bool = True) -> Automation:
     )
 
 
-__all__ = ["Automation", "DryRun", "Element", "get_automation"]
+def check_permissions(prompt: bool = True, open_settings: bool = True) -> bool:
+    """Print which OS permissions are granted, requesting missing ones. True if all are granted."""
+    if platform.system() == "Darwin":
+        from .macos_permissions import report
+
+        return report(prompt, open_settings)
+    print("No permission check for this OS.")
+    return True
+
+
+__all__ = ["Automation", "DryRun", "Element", "check_permissions", "get_automation"]

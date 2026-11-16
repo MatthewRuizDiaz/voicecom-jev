@@ -96,11 +96,13 @@ python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env   # then put your key in .env
 ```
 
-Give your terminal app these permissions in **System Settings → Privacy & Security** (macOS asks on first use for some of them):
+macOS grants permissions to the app you run voicecom from (Terminal, iTerm, Claude…), not to Python. Run the check once from that app:
 
-- **Microphone**: to record while the key is held
-- **Input Monitoring**: for the global push-to-talk key
-- **Accessibility**: to click elements, snap windows and send keystrokes
+```bash
+.venv/bin/python -m voicecom --check
+```
+
+It reports **Microphone** (to record while the key is held), **Input Monitoring** (for the global push-to-talk key) and **Accessibility** (to click, type, scroll and move windows). It triggers the system prompt for any that are missing, names the app to turn on, and opens the right page in System Settings. After turning them on, quit and reopen that app and run the check again. `--check --no-prompt` only reports.
 
 The first run downloads the Whisper model (`base.en`, about 140 MB).
 
@@ -129,6 +131,7 @@ voicecom/
   platforms/
     base.py          Automation interface + DryRun wrapper
     macos.py         AX API, Quartz events, osascript
+    macos_permissions.py   the --check permission report
 tests/               gate and parser tests (Jev stubbed)
 ```
 

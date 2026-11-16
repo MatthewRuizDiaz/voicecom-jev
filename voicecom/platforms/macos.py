@@ -57,8 +57,8 @@ def _osascript(script: str) -> str:
 class MacAutomation(Automation):
     def __init__(self, warn: bool = True):
         if warn and not AX.AXIsProcessTrusted():
-            print("! Accessibility permission is missing: click-by-label and window snapping won't work.\n"
-                  "  Grant it to your terminal in System Settings > Privacy & Security > Accessibility.")
+            print("! Accessibility permission is missing: clicking, typing and window snapping won't work.\n"
+                  "  Run: .venv/bin/python -m voicecom --check")
 
     # ---------- read-only ----------
     def _front(self):

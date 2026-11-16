@@ -16,7 +16,7 @@ import time
 
 from .engine import Engine, Thresholds
 from .jev import Jev
-from .platforms import DryRun, get_automation
+from .platforms import DryRun, check_permissions, get_automation
 from .registry import REGISTRY
 
 HOTKEYS = {"alt_r": "Right Option", "cmd_r": "Right Command", "ctrl_r": "Right Control",
@@ -36,7 +36,15 @@ def main() -> None:
     ap.add_argument("--act", type=float, default=Thresholds.act, help="probability to run without asking")
     ap.add_argument("--ignore", type=float, default=Thresholds.ignore, help="probability below which to ignore")
     ap.add_argument("--list", action="store_true", help="list the commands and exit")
+    ap.add_argument("--check", action="store_true",
+                    help="check the Microphone, Input Monitoring and Accessibility permissions, "
+                         "ask for any that are missing, and exit")
+    ap.add_argument("--no-prompt", action="store_true", help="with --check: only report, don't ask or open Settings")
     args = ap.parse_args()
+
+    if args.check:
+        ok = check_permissions(prompt=not args.no_prompt, open_settings=not args.no_prompt)
+        sys.exit(0 if ok else 1)
 
     if args.list:
         for c in REGISTRY.values():
@@ -73,6 +81,14 @@ def listen(engine: Engine, args) -> None:
     from pynput import keyboard
 
     from .stt import Recorder, Transcriber
+
+    if platform.system() == "Darwin":
+        from .platforms.macos_permissions import check
+
+        missing = [p.name for p in check(prompt=False) if not p.ok]
+        if missing:
+            print(f"! Missing permissions: {', '.join(missing)}. The push-to-talk key or mic may not work.\n"
+                  "  Run: .venv/bin/python -m voicecom --check", flush=True)
 
     print(f"Loading speech model ({args.whisper_model})...", flush=True)
     stt = Transcriber(args.whisper_model)
