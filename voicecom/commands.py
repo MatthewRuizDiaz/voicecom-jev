@@ -1,0 +1,152 @@
+"""The command set. Each entry: a name, a description Jev chooses by, and a planner in plain code."""
+
+from __future__ import annotations
+
+import re
+from urllib.parse import quote_plus
+
+from . import parse
+from .registry import Ctx, Plan, command
+
+DICTATE = "dictate"
+
+
+def _app_name(ctx: Ctx, *leads: str) -> str | None:
+    """Prefer the app Jev picked from the installed list; fall back to the spoken words."""
+    if ctx.app and ctx.app_p >= 0.4:
+        return ctx.app
+    spoken = parse.after(ctx.transcript, *leads)
+    spoken = re.sub(r"^(the\s+)?(app\s+)?", "", spoken, flags=re.I)
+    spoken = re.sub(r"\s+(app|application)$", "", spoken, flags=re.I)
+    return spoken or None
+
+
+# ---------------------------------------------------------------- apps
+@command("open_app", "Open, launch, start, or switch to an application. E.g. 'open Chrome', "
+         "'switch to Slack', 'go to Spotify'.", uses_app=True)
+def open_app(ctx: Ctx):
+    name = _app_name(ctx, "open up", "open", "launch", "start", "switch to", "go to", "bring up", "show")
+    if name:
+        return Plan(f"open {name}", lambda: ctx.auto.open_app(name))
+
+
+@command("quit_app", "Quit or close a whole application. E.g. 'quit Spotify', 'close Slack completely'.",
+         uses_app=True)
+def quit_app(ctx: Ctx):
+    name = _app_name(ctx, "quit", "close", "exit", "kill") or ctx.auto.frontmost_app()
+    return Plan(f"quit {name}", lambda: ctx.auto.quit_app(name))
+
+
+# ---------------------------------------------------------------- pointer / keyboard
+@command("click", "Click, press, or select a button, link, tab, or menu item on screen by its label. "
+         "E.g. 'click Submit', 'press the Sign in button', 'select Settings'.")
+def click(ctx: Ctx):
+    elements = ctx.elements if ctx.elements is not None else ctx.auto.clickable_elements()
+    if not elements:
+        return Plan("click: no labeled elements found in the front window", lambda: None, p=0.0)
+    el, p = ctx.jev.pick_element(ctx.transcript, elements, ctx.auto.frontmost_app())
+    if el is None:
+        return Plan("click: nothing on screen matches", lambda: None, p=p)
+    return Plan(f"click {el.role} '{el.label}'", lambda: ctx.auto.click(el), p=p,
+                extra={"elements": len(elements)})
+
+
+@command("scroll_down", "Scroll down the page or window. E.g. 'scroll down', 'scroll down a lot', 'page down'.")
+def scroll_down(ctx: Ctx):
+    n = parse.scroll_amount(ctx.transcript)
+    return Plan(f"scroll down {n}", lambda: ctx.auto.scroll(n))
+
+
+@command("scroll_up", "Scroll up the page or window. E.g. 'scroll up', 'go back up a bit'.")
+def scroll_up(ctx: Ctx):
+    n = parse.scroll_amount(ctx.transcript)
+    return Plan(f"scroll up {n}", lambda: ctx.auto.scroll(-n))
+
+
+@command("press_keys", "Press a key or keyboard shortcut. E.g. 'press enter', 'hit escape', "
+         "'press command shift T', 'press tab'.")
+def press_keys(ctx: Ctx):
+    keys = parse.keys(ctx.transcript)
+    if keys:
+        return Plan(f"press {'+'.join(keys)}", lambda: ctx.auto.press(keys))
+
+
+@command("type_text", "Type out specific text the user dictates after the word 'type' or 'write'. "
+         "E.g. 'type hello world', 'write see you tomorrow'.")
+def type_text(ctx: Ctx):
+    text = parse.after(ctx.transcript.strip(), "type out", "type", "write", "enter the text")
+    if text:
+        return Plan(f"type {text!r}", lambda: ctx.auto.type_text(text))
+
+
+# ---------------------------------------------------------------- windows
+@command("snap_left", "Move or snap the current window to the left half of the screen.")
+def snap_left(ctx: Ctx):
+    return Plan("snap window left", lambda: ctx.auto.snap_window("left"))
+
+
+@command("snap_right", "Move or snap the current window to the right half of the screen.")
+def snap_right(ctx: Ctx):
+    return Plan("snap window right", lambda: ctx.auto.snap_window("right"))
+
+
+@command("maximize_window", "Maximize the current window or make it fill the screen.")
+def maximize_window(ctx: Ctx):
+    return Plan("maximize window", lambda: ctx.auto.snap_window("max"))
+
+
+# ---------------------------------------------------------------- volume
+@command("volume_up", "Make the sound louder / turn the volume up.")
+def volume_up(ctx: Ctx):
+    step = parse.number(ctx.transcript) or 10
+    v = min(100, ctx.auto.get_volume() + step)
+    return Plan(f"volume -> {v}", lambda: ctx.auto.set_volume(v))
+
+
+@command("volume_down", "Make the sound quieter / turn the volume down.")
+def volume_down(ctx: Ctx):
+    step = parse.number(ctx.transcript) or 10
+    v = max(0, ctx.auto.get_volume() - step)
+    return Plan(f"volume -> {v}", lambda: ctx.auto.set_volume(v))
+
+
+@command("set_volume", "Set the volume to a specific level. E.g. 'set volume to 30', 'volume fifty percent'.")
+def set_volume(ctx: Ctx):
+    v = parse.number(ctx.transcript)
+    if v is not None:
+        return Plan(f"volume -> {v}", lambda: ctx.auto.set_volume(v))
+
+
+@command("mute", "Mute or unmute the sound.")
+def mute(ctx: Ctx):
+    return Plan("toggle mute", ctx.auto.toggle_mute)
+
+
+# ---------------------------------------------------------------- browser
+@command("new_tab", "Open a new browser or editor tab.")
+def new_tab(ctx: Ctx):
+    return Plan("new tab", ctx.auto.new_tab)
+
+
+@command("close_tab", "Close the current tab.")
+def close_tab(ctx: Ctx):
+    return Plan("close tab", ctx.auto.close_tab)
+
+
+@command("web_search", "Search the web for something. E.g. 'search for pizza near me', "
+         "'google how tall is Everest', 'look up the weather'.")
+def web_search(ctx: Ctx):
+    q = parse.after(ctx.transcript, "search the web for", "search for", "search", "google",
+                    "look up", "find me", "find")
+    if q:
+        url = f"https://www.google.com/search?q={quote_plus(q)}"
+        return Plan(f"search {q!r}", lambda: ctx.auto.open_url(url))
+
+
+# ---------------------------------------------------------------- fallback
+@command(DICTATE, "Not a command for the computer: ordinary speech or a sentence to be typed out "
+         "as dictation.")
+def dictate(ctx: Ctx):
+    text = ctx.transcript.strip()
+    if text:
+        return Plan(f"dictate {text!r}", lambda: ctx.auto.type_text(text))

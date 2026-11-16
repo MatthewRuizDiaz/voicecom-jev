@@ -1,0 +1,9 @@
+typesafe-sdk>=0.7
+faster-whisper>=1.1
+sounddevice>=0.5
+numpy
+pynput>=1.8
+pyobjc-core; sys_platform == "darwin"
+pyobjc-framework-Cocoa; sys_platform == "darwin"
+pyobjc-framework-Quartz; sys_platform == "darwin"
+pyobjc-framework-ApplicationServices; sys_platform == "darwin"
