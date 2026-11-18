@@ -12,6 +12,7 @@ import signal
 import sys
 import math
 import threading
+import warnings
 from typing import Callable
 
 import objc
@@ -22,6 +23,9 @@ from AppKit import (NSApplication, NSBackingStoreBuffered, NSButton, NSColor, NS
 from PyObjCTools import AppHelper
 
 from .view import Card, View
+
+# Setting a layer colour passes a CGColor pointer, which pyobjc warns about on every launch; harmless here.
+warnings.filterwarnings("ignore", category=objc.ObjCPointerWarning)
 
 WIDTH = 340
 INNER = WIDTH - 32  # inside the 16pt side insets
@@ -228,13 +232,14 @@ class Overlay(View):
         self.panel.orderFrontRegardless()
 
     def _show_listening(self, level: Callable[[], float]) -> None:
-        """The word "Listening" in the same style as "Thinking…", with a short level meter beside it."""
-        meter_w = 56
+        """The word "Listening" in the same style as "Thinking…", and a level meter filling the rest of the row."""
+        word = _label("Listening", 13, 0.4, NSColor.secondaryLabelColor())
+        meter_w = INNER - word.fittingSize().width - 8  # the label's own 2pt insets make up the rest
         track = _layer_view(meter_w, 4, NSColor.tertiaryLabelColor())
         fill = _layer_view(4, 4, NSColor.secondaryLabelColor(), fixed=False)
         track.addSubview_(fill)
 
-        self._set([_row(_label("Listening", 13, 0.4, NSColor.secondaryLabelColor()), track, spacing=10)])
+        self._set([_row(word, track, spacing=12)])
         gen, rms_avg, shown = self._gen, [0.0], [0.0]
 
         def tick():
