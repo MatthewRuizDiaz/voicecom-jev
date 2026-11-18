@@ -20,7 +20,6 @@ from AppKit import (NSApplication, NSBackingStoreBuffered, NSButton, NSColor, NS
                     NSTrackingArea,
                     NSStackView, NSTextField, NSView, NSVisualEffectView)
 from PyObjCTools import AppHelper
-from Quartz import CABasicAnimation
 
 from .view import Card, View
 
@@ -229,22 +228,13 @@ class Overlay(View):
         self.panel.orderFrontRegardless()
 
     def _show_listening(self, level: Callable[[], float]) -> None:
-        """Same width as every other state: a softly pulsing red dot and a calm level meter."""
-        dot = _layer_view(8, 8, NSColor.systemRedColor())
-        pulse = CABasicAnimation.animationWithKeyPath_("opacity")
-        pulse.setFromValue_(1.0)
-        pulse.setToValue_(0.35)
-        pulse.setDuration_(0.9)
-        pulse.setAutoreverses_(True)
-        pulse.setRepeatCount_(1e9)
-        dot.layer().addAnimation_forKey_(pulse, "pulse")
-
-        meter_w = INNER - 8 - 12
+        """The word "Listening" in the same style as "Thinking…", with a short level meter beside it."""
+        meter_w = 56
         track = _layer_view(meter_w, 4, NSColor.tertiaryLabelColor())
-        fill = _layer_view(4, 4, NSColor.labelColor().colorWithAlphaComponent_(0.6), fixed=False)
+        fill = _layer_view(4, 4, NSColor.secondaryLabelColor(), fixed=False)
         track.addSubview_(fill)
 
-        self._set([_row(dot, track, spacing=12)])
+        self._set([_row(_label("Listening", 13, 0.4, NSColor.secondaryLabelColor()), track, spacing=10)])
         gen, rms_avg, shown = self._gen, [0.0], [0.0]
 
         def tick():
