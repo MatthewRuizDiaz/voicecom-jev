@@ -53,7 +53,8 @@ class Engine:
         # Read the accessibility tree while Jev decides, if this sounds like a click.
         elements_f = self.pool.submit(self.auto.clickable_elements) if CLICKY.search(transcript) else None
         d = self.jev.decide(transcript, front, self.apps, [s.text for s in found])
-        if d.meaningful >= self.t.meaningful:
+        takes_rest = REGISTRY[d.command].takes_rest and d.p >= self.t.act  # e.g. "open Notes and type hi" is one note
+        if d.meaningful >= self.t.meaningful and not takes_rest:
             steps = chain.best_split(found, d.spans, self.t.act,
                                      takes_rest=frozenset(c.name for c in REGISTRY.values() if c.takes_rest))
             if steps:

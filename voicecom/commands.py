@@ -160,14 +160,16 @@ def web_search(ctx: Ctx):
 
 
 # ---------------------------------------------------------------- notes
-NOTE_LEADS = ("open a new note and type", "open a new note and write", "make a new note saying",
+NOTE_LEADS = ("open the notes app and type", "open the notes app and write", "open notes and type",
+              "open notes and write", "go to notes and type", "open a new note and type", "open a new note and write", "make a new note saying",
               "make a note saying", "create a new note saying", "create a note saying", "new note saying",
               "make a new note", "create a new note", "open a new note", "start a new note", "make a note",
               "create a note", "write a note", "take a note", "jot down", "new note", "note that", "note")
 
 
-@command("new_note", "Create a new note in the Notes app containing what the user says. E.g. 'new note "
-         "call the dentist', 'make a note saying buy milk', 'open a new note and type meeting at 3'.",
+@command("new_note", "Create a new note in the Notes app containing what the user says, including any "
+         "request to open Notes and type or write something. E.g. 'new note call the dentist', "
+         "'make a note saying buy milk', 'open Notes and type meeting at 3'.",
          takes_rest=True)
 def new_note(ctx: Ctx):
     text = parse.after(ctx.transcript, *NOTE_LEADS, keep_end=True)

@@ -210,6 +210,13 @@ def test_new_note_is_not_split_into_open_then_type():
     assert auto.calls == [("new_note", ("hello",))]
 
 
+def test_open_notes_and_type_makes_a_new_note():  # user decision on #23
+    jev = StubJev("new_note", 0.96, spans={"Open Notes": ("open_app", 0.99, 0.0, "Notes"),
+                                           "type hello": ("type_text", 0.99, 0.0, None)})
+    auto, _ = run("Open Notes and type hello.", jev)
+    assert auto.calls == [("new_note", ("hello",))]
+
+
 def test_new_note_can_be_the_last_step():
     jev = StubJev("dictate", 0.5, spans={"snap this left": ("snap_left", 0.99, 0.0, None),
                                          "make a note saying hi": ("new_note", 0.96, 0.0, None)})
