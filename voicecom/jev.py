@@ -7,7 +7,7 @@ import platform
 import re
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from typesafe_sdk import Choice, Noul, NoulCriteria, TypeSafeClient
@@ -18,6 +18,7 @@ from .registry import REGISTRY
 MAX_OPTIONS = 255  # Jev's Choice limit
 NO_APP = "no_app_named"
 NO_ELEMENT = "none_of_these"
+NAMES_APP = re.compile(r"\b(open|launch|start|switch|go to|bring up|show|quit|close|exit|kill)\b", re.I)
 
 
 @dataclass
@@ -30,6 +31,7 @@ class Decision:
     app: str | None
     app_p: float
     latency: float
+    spans: list["Decision"] = field(default_factory=list)  # one per candidate Span, same order
 
 
 def _api_key() -> str | None:
@@ -56,60 +58,62 @@ class Jev:
         self.client = TypeSafeClient(api_key=key, model=model, timeout=15)
 
     # ------------------------------------------------------------ call 1: what command?
-    def decide(self, transcript: str, frontmost_app: str, apps: list[str]) -> Decision:
+    def decide(self, transcript: str, frontmost_app: str, apps: list[str],
+               spans: list[str] = ()) -> Decision:
+        """One request: the command for the whole sentence plus, when it might hold several
+        commands, the command for each candidate Span (see chain.py)."""
         commands = {c.name: c.description for c in REGISTRY.values()}
         app_options = {a: None for a in apps[: MAX_OPTIONS - 1]}
         app_options[NO_APP] = "The request doesn't name any of these applications"
         state = {"spoken_request": transcript, "frontmost_app": frontmost_app}
 
+        questions = {
+            "command": Choice(
+                instructions="Which command does the spoken request ask the computer to do? "
+                             "If it is not an instruction to the computer, choose dictate.",
+                criteria=commands,
+            ),
+            "destructive": _destructive("this spoken request"),
+            "meaningful": Noul(
+                instructions="This is a real request or sentence the speaker means, not just filler "
+                             "sounds, hesitation, or noise.",
+                criteria=NoulCriteria(
+                    true="A command, a question, or a sentence with real words, even a one-word command",
+                    false="Only filler like uh, um, hmm, er, a cough, or a stray word fragment",
+                ),
+            ),
+            # Speculative: only read when the chosen command takes an app.
+            "app": Choice(instructions="Which application does the spoken request name, if any?",
+                          criteria=app_options),
+        }
+        for k, text in enumerate(spans):
+            state[f"phrase_{k}"] = text
+            questions[f"command_{k}"] = Choice(
+                instructions=f"Taken on its own, which command does phrase_{k} (\"{text}\") ask the computer "
+                             "to do? If it is not a complete instruction to the computer by itself, choose dictate.",
+                criteria=commands,
+            )
+            questions[f"destructive_{k}"] = _destructive(f"phrase_{k} (\"{text}\")")
+            if NAMES_APP.search(text):
+                questions[f"app_{k}"] = Choice(
+                    instructions=f"Which application does phrase_{k} (\"{text}\") name, if any?",
+                    criteria=app_options)
+
         t = time.perf_counter()
-        r = self.client.system_one(
-            state=state,
-            questions={
-                "command": Choice(
-                    instructions="Which command does the spoken request ask the computer to do? "
-                                 "If it is not an instruction to the computer, choose dictate.",
-                    criteria=commands,
-                ),
-                "destructive": Noul(
-                    instructions="Carrying out this spoken request would close, quit, delete, send, "
-                                 "or discard something, so work could be lost or it would be hard to undo.",
-                    criteria=NoulCriteria(
-                        true="Closes or quits something, deletes, sends, submits, or overwrites",
-                        false="Opens, moves, scrolls, searches, changes volume, or types",
-                    ),
-                ),
-                "meaningful": Noul(
-                    instructions="This is a real request or sentence the speaker means, not just filler "
-                                 "sounds, hesitation, or noise.",
-                    criteria=NoulCriteria(
-                        true="A command, a question, or a sentence with real words, even a one-word command",
-                        false="Only filler like uh, um, hmm, er, a cough, or a stray word fragment",
-                    ),
-                ),
-                # Speculative: only read when the chosen command takes an app.
-                "app": Choice(
-                    instructions="Which application does the spoken request name, if any?",
-                    criteria=app_options,
-                ),
-            },
-        )
+        r = self.client.system_one(state=state, questions=questions)
         latency = time.perf_counter() - t
-        cmd, dest, app = r.answers["command"], r.answers["destructive"], r.answers["app"]
-        # The best real app, even when "no app named" wins: "open my email" puts most weight on
-        # no_app_named but still leans toward Mail, and the command code decides what to do with that.
-        real = {k: float(v) for k, v in app.probabilities.items() if k != NO_APP}
-        best_app = max(real, key=real.get) if real else None
-        return Decision(
-            command=cmd.choice,
-            p=float(cmd.probabilities[cmd.choice]),
-            confidence=float(cmd.confidence),
-            destructive=float(dest.noul),
-            meaningful=float(r.answers["meaningful"].noul),
-            app=best_app,
-            app_p=real.get(best_app, 0.0),
-            latency=latency,
-        )
+        meaningful = float(r.answers["meaningful"].noul)
+
+        def read(suffix: str) -> Decision:
+            cmd, dest = r.answers["command" + suffix], r.answers["destructive" + suffix]
+            app, app_p = _best_app(r.answers.get("app" + suffix))
+            return Decision(command=cmd.choice, p=float(cmd.probabilities[cmd.choice]),
+                            confidence=float(cmd.confidence), destructive=float(dest.noul),
+                            meaningful=meaningful, app=app, app_p=app_p, latency=latency)
+
+        d = read("")
+        d.spans = [read(f"_{k}") for k in range(len(spans))]
+        return d
 
     # ------------------------------------------------------------ call 2: which element?
     def pick_element(self, transcript: str, elements: list[Element], app: str) -> tuple[Element | None, float]:
@@ -148,6 +152,27 @@ class Jev:
             )},
         )
         return float(r.answers["yes"].noul)
+
+
+def _destructive(subject: str) -> Noul:
+    return Noul(
+        instructions=f"Carrying out {subject} would close, quit, delete, send, or discard something, "
+                     "so work could be lost or it would be hard to undo.",
+        criteria=NoulCriteria(
+            true="Closes or quits something, deletes, sends, submits, or overwrites",
+            false="Opens, moves, scrolls, searches, changes volume, or types",
+        ),
+    )
+
+
+def _best_app(answer) -> tuple[str | None, float]:
+    """The best real app, even when "no app named" wins: "open my email" puts most weight on
+    no_app_named but still leans toward Mail, and the command code decides what to do with that."""
+    if answer is None:
+        return None, 0.0
+    real = {k: float(v) for k, v in answer.probabilities.items() if k != NO_APP}
+    best = max(real, key=real.get) if real else None
+    return best, real.get(best, 0.0)
 
 
 def _shortlist(transcript: str, elements: list[Element], limit: int) -> list[Element]:

@@ -70,3 +70,15 @@ _Avoid_: driver, backend, executor
 **Dry run**:
 A mode where Decisions and Plans are made and logged but the Automation layer performs nothing.
 _Avoid_: simulation, test mode
+
+**Chain**:
+Several Commands said in one Utterance ("open Safari and search for tacos"), run in order as Steps after one Gate decision for the whole Chain.
+_Avoid_: macro, batch, sequence
+
+**Step**:
+One Command within a Chain, with its own Plan.
+_Avoid_: sub-command, action
+
+**Span**:
+A candidate stretch of the Transcript between likely boundaries ("and", "then", commas) that Jev classifies on its own, to decide where a Chain splits.
+_Avoid_: chunk, segment, clause

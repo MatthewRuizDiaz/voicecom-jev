@@ -35,6 +35,7 @@ Each command prints one log line: transcript, chosen command, its probability an
 14:46:38 "Open Safari." -> open_app p=1.00 conf=1.00 destr=0.03 app=Safari(1.00) | stt=0.21s jev=0.15s total=0.37s | WOULD RUN: open Safari
 14:46:38 "Snap this window to the right." -> snap_right p=1.00 conf=1.00 destr=0.03 | stt=0.23s jev=0.11s total=0.34s | WOULD RUN: snap window right
 14:46:37 "Close this tab." -> close_tab p=1.00 conf=1.00 destr=0.95 | stt=0.30s jev=0.13s total=0.43s | CONFIRM (destructive): close tab - say yes or no
+14:11:33 "Snap this window left, open Notes and then snap it right." -> chain snap_left(1.00) → open_app(1.00) → snap_right(0.93) destr=0.03 | stt=0.00s jev=0.14s total=0.15s | WOULD RUN: snap window left, then open Notes, then snap window right
 ```
 
 ### How Jev is used
@@ -44,6 +45,7 @@ Each command prints one log line: transcript, chosen command, its probability an
 - **Choice for element selection.** For "click X", the app reads the foreground window's accessibility tree, lists the labeled buttons, links, tabs and menu items, and asks a second Choice question: which one the user means. A `none_of_these` option lets Jev say nothing matches.
 - **Noul for filler.** Another Noul in the same request asks whether the Utterance is real speech or just "uh", "hmm", or a cough. Below 0.30 it's ignored, so a stray key press never types noise.
 - **Speculative app Choice.** The first request also asks which installed app is named. That answer is only read when the command takes an app (`open_app`, `quit_app`), and it costs no extra round trip. If you name an app vaguely ("open my email"), Jev's leaning (Mail) is offered as a question ("open Mail?") rather than opening an app literally named "my email".
+- **Several commands in one sentence.** "Open Safari and search for tacos" is cut in code at every likely boundary, and the same request asks the command Choice for each candidate Span too. It splits only where every part is a confident command, so "type salt and pepper" stays whole. See [ADR 0005](docs/adr/0005-split-chains-by-span-fan-out.md).
 - **Confidence thresholds gate everything.** The gate reads the probability of the chosen option, as the TypeSafe docs recommend for Choice answers:
 
   | Condition | Result |
@@ -129,6 +131,7 @@ voicecom/
   engine.py          confidence gate, confirmations, one-line log
   registry.py        Command / Plan / @command
   commands.py        the 18 commands
+  chain.py           several commands in one sentence: Spans and the best split
   parse.py           numbers, key chords, free text
   platforms/
     base.py          Automation interface + DryRun wrapper

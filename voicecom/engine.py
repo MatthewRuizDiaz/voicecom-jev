@@ -7,7 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
-from . import commands  # noqa: F401  (registers the commands)
+from . import chain, commands  # noqa: F401  (commands registers the commands)
 from .jev import Jev
 from .registry import REGISTRY, Ctx, Plan
 
@@ -29,9 +29,11 @@ CLICKY = re.compile(r"\b(click|tap|press|select|hit|choose|push)\b", re.I)
 
 class Engine:
     def __init__(self, auto, jev: Jev, thresholds: Thresholds | None = None, speak: bool = True,
-                 dry_run: bool = False):
+                 dry_run: bool = False, step_wait: float | None = None):
         self.auto, self.jev, self.t = auto, jev, thresholds or Thresholds()
         self.dry_run = dry_run
+        # Longest wait for one Chain step to take effect (e.g. the opened app coming to the front).
+        self.step_wait = (0.0 if dry_run else 2.0) if step_wait is None else step_wait
         self.speak = speak
         self.pending: tuple[Plan, str, float] | None = None  # plan, question, asked-at
         self.pool = ThreadPoolExecutor(max_workers=2)
@@ -47,9 +49,14 @@ class Engine:
         self.pending = None
 
         front = self.auto.frontmost_app()
+        found = chain.spans(transcript)
         # Read the accessibility tree while Jev decides, if this sounds like a click.
         elements_f = self.pool.submit(self.auto.clickable_elements) if CLICKY.search(transcript) else None
-        d = self.jev.decide(transcript, front, self.apps)
+        d = self.jev.decide(transcript, front, self.apps, [s.text for s in found])
+        if d.meaningful >= self.t.meaningful:
+            steps = chain.best_split(found, d.spans, self.t.act)
+            if steps:
+                return self._handle_chain(transcript, steps, d, elements_f, stt_s, start)
 
         cmd = REGISTRY[d.command]
         ctx = Ctx(transcript, self.auto, self.jev, app=d.app, app_p=d.app_p, apps=self.apps)
@@ -79,16 +86,66 @@ class Engine:
                   or plan.confirm)
         risky = d.destructive >= self.t.destructive
         if unsure or risky:
-            why = "destructive" if risky else "unsure"
-            question = f"Confirm: {plan.summary}?"
-            self.pending = (plan, question, time.time())
-            self._log(head, f"{YELLOW}CONFIRM ({why}): {plan.summary} - say yes or no{RESET}",
-                      stt_s, d.latency, start)
-            if self.speak:
-                self.auto.say(question)
-            return
+            return self._ask(plan, head, "destructive" if risky else "unsure", stt_s, d.latency, start)
 
         self._run(plan, head, stt_s, d.latency, start)
+
+    def _handle_chain(self, transcript, steps, d, elements_f, stt_s, start) -> None:
+        """Plan every Step first, then one decision for the whole Chain: run, confirm, or ignore."""
+        head = (f'"{transcript}" -> chain ' + " → ".join(f"{BOLD}{sd.command}{RESET}({sd.p:.2f})" for _, sd in steps)
+                + f" destr={max(sd.destructive for _, sd in steps):.2f}")
+        planned: list[tuple] = []  # (span text, step decision, plan or None = plan a click at its turn)
+        unsure = False
+        for i, (span, sd) in enumerate(steps):
+            ctx = Ctx(span.text, self.auto, self.jev, app=sd.app, app_p=sd.app_p, apps=self.apps)
+            if sd.command == "click" and i > 0:
+                planned.append((span.text, sd, None))  # the screen changes after the earlier steps
+                continue
+            if sd.command == "click" and elements_f is not None:
+                ctx.elements = elements_f.result()
+            plan = REGISTRY[sd.command].plan(ctx)
+            if plan is None or (plan.p is not None and plan.p < self.t.element_ignore):
+                why = plan.summary if plan else "couldn't parse"
+                return self._log(head, f'{GREY}IGNORED (step {i + 1} "{span.text}": {why}){RESET}',
+                                 stt_s, d.latency, start)
+            unsure |= plan.confirm or (plan.p is not None and plan.p < self.t.element_act)
+            planned.append((span.text, sd, plan))
+
+        summary = ", then ".join(p.summary if p else f"click ({text})" for text, _, p in planned)
+        plan = Plan(summary, lambda: self._run_steps(planned))
+        risky = any(sd.destructive >= self.t.destructive for _, sd, _ in planned)
+        if unsure or risky:
+            return self._ask(plan, head, "destructive" if risky else "unsure", stt_s, d.latency, start)
+        self._run(plan, head, stt_s, d.latency, start)
+
+    def _run_steps(self, planned) -> None:
+        for i, (text, sd, plan) in enumerate(planned):
+            if i:
+                self._settle(planned[i - 1][2])
+            if plan is None:  # a click after earlier steps: read the screen now
+                ctx = Ctx(text, self.auto, self.jev, apps=self.apps)
+                plan = REGISTRY["click"].plan(ctx)
+                if plan.p is None or plan.p < self.t.element_act:
+                    raise RuntimeError(f"stopped at step {i + 1}: {plan.summary} (p={plan.p or 0:.2f})")
+            plan.do()
+
+    def _settle(self, prev: Plan | None) -> None:
+        """Wait for the previous Step to take effect before the next one acts on the screen."""
+        if self.step_wait <= 0:
+            return
+        app = prev.extra.get("front") if prev else None
+        if app:
+            deadline = time.time() + self.step_wait
+            while self.auto.frontmost_app() != app and time.time() < deadline:
+                time.sleep(0.02)
+        time.sleep(prev.extra.get("settle", 0.25) if prev else 0.25)
+
+    def _ask(self, plan: Plan, head: str, why: str, stt_s: float, jev_s: float, start: float) -> None:
+        question = f"Confirm: {plan.summary}?"
+        self.pending = (plan, question, time.time())
+        self._log(head, f"{YELLOW}CONFIRM ({why}): {plan.summary} - say yes or no{RESET}", stt_s, jev_s, start)
+        if self.speak:
+            self.auto.say(question)
 
     def _answer_confirmation(self, reply: str) -> None:
         plan, question, _ = self.pending

@@ -39,7 +39,7 @@ def _app_name(ctx: Ctx, *leads: str) -> tuple[str | None, bool]:
 def open_app(ctx: Ctx):
     name, guessed = _app_name(ctx, "open up", "open", "launch", "start", "switch to", "go to", "bring up", "show")
     if name:
-        return Plan(f"open {name}", lambda: ctx.auto.open_app(name), confirm=guessed)
+        return Plan(f"open {name}", lambda: ctx.auto.open_app(name), confirm=guessed, extra={"front": name})
 
 
 @command("quit_app", "Quit or close a whole application. E.g. 'quit Spotify', 'close Slack completely'.",
@@ -139,7 +139,7 @@ def mute(ctx: Ctx):
 @command("new_tab", "Open a new browser or editor tab.")
 def new_tab(ctx: Ctx):
     app = ctx.auto.new_tab_target()  # the front app if it has tabs, otherwise the default browser
-    return Plan(f"new tab in {app}", lambda: ctx.auto.new_tab(app))
+    return Plan(f"new tab in {app}", lambda: ctx.auto.new_tab(app), extra={"front": app})
 
 
 @command("close_tab", "Close the current tab.")
@@ -155,7 +155,7 @@ def web_search(ctx: Ctx):
                     "look up", "find me", "find")
     if q:
         url = f"https://www.google.com/search?q={quote_plus(q)}"
-        return Plan(f"search {q!r}", lambda: ctx.auto.open_url(url))
+        return Plan(f"search {q!r}", lambda: ctx.auto.open_url(url), extra={"settle": 1.0})  # page load
 
 
 # ---------------------------------------------------------------- fallback
