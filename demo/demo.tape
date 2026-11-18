@@ -13,12 +13,12 @@ Hide
 Type "source .venv/bin/activate && clear" Enter
 Show
 
-Type "python -m voicecom --dry-run --text 'open safari' --text 'snap this window to the left' --text 'scroll down a lot' --text 'set the volume to thirty percent' --text 'search for the best tacos in austin' --text 'I will be there in ten minutes'"
+Type "python -m voicecom --no-overlay --dry-run --text 'open safari' --text 'snap this window to the left' --text 'scroll down a lot' --text 'set the volume to thirty percent' --text 'search for the best tacos in austin' --text 'I will be there in ten minutes'"
 Sleep 400ms
 Enter
 Sleep 9s
 
-Type "python -m voicecom --dry-run --text 'close this tab'"
+Type "python -m voicecom --no-overlay --dry-run --text 'close this tab'"
 Enter
 Sleep 4s
 Type "no, keep it"

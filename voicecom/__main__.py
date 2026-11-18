@@ -4,6 +4,7 @@
     python -m voicecom --dry-run       # decide and log, but don't touch anything
     python -m voicecom --text "open chrome" --text "scroll down"   # skip the mic
     python -m voicecom --repl          # type commands instead of speaking
+    python -m voicecom --no-overlay    # terminal log only, no on-screen panel
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from .engine import Engine, Thresholds
 from .jev import Jev
 from .platforms import DryRun, check_permissions, get_automation
 from .registry import REGISTRY
+from .view import View
 
 HOTKEYS = {"alt_r": "Right Option", "cmd_r": "Right Command", "ctrl_r": "Right Control",
            "f13": "F13", "f18": "F18", "alt": "Left Option"}
@@ -33,6 +35,7 @@ def main() -> None:
     ap.add_argument("--whisper-model", default="base.en", help="faster-whisper model (tiny.en, base.en, small.en)")
     ap.add_argument("--model", default="jev-latest", help="TypeSafe model")
     ap.add_argument("--quiet", action="store_true", help="no spoken confirmation prompts")
+    ap.add_argument("--no-overlay", action="store_true", help="don't show the on-screen panel (terminal log only)")
     ap.add_argument("--act", type=float, default=Thresholds.act, help="probability to run without asking")
     ap.add_argument("--ignore", type=float, default=Thresholds.ignore, help="probability below which to ignore")
     ap.add_argument("--list", action="store_true", help="list the commands and exit")
@@ -57,24 +60,40 @@ def main() -> None:
     if args.dry_run:
         auto = DryRun(auto)
     typed = args.text or args.repl
+    use_overlay = platform.system() == "Darwin" and not args.no_overlay
+    view = View()
+    if use_overlay:
+        from .overlay import Overlay
+        view = Overlay()
     engine = Engine(auto, Jev(args.model), Thresholds(act=args.act, ignore=args.ignore),
-                    speak=not (args.quiet or typed), dry_run=args.dry_run)
+                    speak=not (args.quiet or typed), dry_run=args.dry_run, view=view)
+    lock = None if typed else _single_instance()  # noqa: F841  (held for the life of the process)
 
-    if args.text:
-        for line in args.text:
-            engine.handle(line)
-            if engine.pending:  # answer confirmations from the keyboard in text mode
-                engine.handle(input("  confirm? > "))
-        return
-    if args.repl:
-        try:
-            while True:
-                line = input("say> ")
+    def work() -> None:
+        if args.text:
+            for line in args.text:
                 engine.handle(line)
-        except (EOFError, KeyboardInterrupt):
-            return
+                if engine.pending:  # answer confirmations from the keyboard in text mode
+                    engine.handle(input("  confirm? > "))
+                if use_overlay:
+                    time.sleep(2.6)  # let the panel be seen before the next line (or exit)
+        elif args.repl:
+            try:
+                while True:
+                    engine.handle(input("say> "))
+            except EOFError:
+                pass
+        else:
+            listen(engine, args, view)
 
-    listen(engine, args)
+    if use_overlay:
+        from .overlay import run_app
+        run_app(work)  # AppKit needs the main thread; work runs beside it
+    else:
+        try:
+            work()
+        except KeyboardInterrupt:
+            pass
 
 
 def _single_instance() -> object:
@@ -95,10 +114,8 @@ def _single_instance() -> object:
     return lock  # keep it open: the lock lasts as long as this process
 
 
-def listen(engine: Engine, args) -> None:
+def listen(engine: Engine, args, view: View) -> None:
     from pynput import keyboard
-
-    lock = _single_instance()  # noqa: F841
 
     from .stt import Recorder, Transcriber
 
@@ -121,11 +138,13 @@ def listen(engine: Engine, args) -> None:
         if key == target and not held["down"]:
             held["down"] = True
             rec.start()
+            view.listening(lambda: rec.level)
             print("  ● listening...", end="\r", flush=True)
 
     def on_release(key):
         if key == target and held["down"]:
             held["down"] = False
+            view.thinking()
             audio_q.put(rec.stop())
 
     listener = keyboard.Listener(on_press=on_press, on_release=on_release)
@@ -139,10 +158,12 @@ def listen(engine: Engine, args) -> None:
             stt_s = time.perf_counter() - t
             print(" " * 20, end="\r")
             if not text:
+                view.hide()
                 continue
             try:
                 engine.handle(text, stt_s)
             except Exception as e:  # keep listening through network hiccups
+                view.hide()
                 print(f'"{text}" -> error: {e}', file=sys.stderr, flush=True)
     except KeyboardInterrupt:
         listener.stop()

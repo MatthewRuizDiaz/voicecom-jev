@@ -222,3 +222,21 @@ def test_new_note_can_be_the_last_step():
                                          "make a note saying hi": ("new_note", 0.96, 0.0, None)})
     auto, _ = run("snap this left and make a note saying hi", jev)
     assert auto.calls == [("snap_window", ("left",)), ("new_note", ("hi",))]
+
+
+# ---------------------------------------------------------------- overlay cards (issue #16)
+class RecordingView:
+    def __init__(self): self.cards = []
+    def thinking(self, transcript=None): pass
+    def result(self, card): self.cards.append(card)
+
+
+def test_view_gets_one_card_per_utterance():
+    view = RecordingView()
+    eng = Engine(StubAuto(), StubJev("web_search", 0.55, spans=SAFARI_TACOS), speak=False, step_wait=0, view=view)
+    eng.handle("open Safari and search for tacos")
+    card = view.cards[-1]
+    assert card.outcome == "ran" and [s.label for s in card.steps] == ["open Safari", "search 'tacos'"]
+    eng = Engine(StubAuto(), StubJev("close_tab", 0.99, destructive=0.9), speak=False, view=view)
+    eng.handle("close this tab")
+    assert view.cards[-1].outcome == "confirm"

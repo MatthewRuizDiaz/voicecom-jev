@@ -18,6 +18,7 @@ class Recorder:
         self._chunks: list[np.ndarray] = []
         self._lock = threading.Lock()
         self._stream: sd.InputStream | None = None
+        self.level = 0.0  # loudness of the latest audio block (RMS), for the overlay's meter
 
     def start(self) -> None:
         with self._lock:
@@ -28,6 +29,7 @@ class Recorder:
     def _cb(self, data, frames, time_info, status):
         with self._lock:
             self._chunks.append(data[:, 0].copy())
+        self.level = float(np.sqrt(np.mean(data[:, 0] ** 2)))
 
     def stop(self) -> np.ndarray:
         if self._stream is not None:

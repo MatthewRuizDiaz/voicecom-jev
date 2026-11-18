@@ -120,6 +120,8 @@ The first run downloads the Whisper model (`base.en`, about 140 MB).
 .venv/bin/python -m voicecom --repl          # type commands at a prompt
 ```
 
+A glass panel in the top-right corner shows what it heard, each Step with Jev's probability, and the outcome. It never takes focus, and it fades after about 2 seconds. `--no-overlay` turns it off.
+
 Other options: `--hotkey {alt_r,cmd_r,ctrl_r,f13,f18,alt}`, `--whisper-model small.en` for better accuracy, and `--quiet` to turn off spoken confirmation prompts.
 
 ## Project layout
@@ -133,6 +135,7 @@ voicecom/
   registry.py        Command / Plan / @command
   commands.py        the 19 commands
   chain.py           several commands in one sentence: Spans and the best split
+  view.py, overlay.py  the Card the engine shows, and the glass panel that draws it
   parse.py           numbers, key chords, free text
   platforms/
     base.py          Automation interface + DryRun wrapper

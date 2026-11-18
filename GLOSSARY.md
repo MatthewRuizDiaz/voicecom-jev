@@ -82,3 +82,11 @@ _Avoid_: sub-command, action
 **Span**:
 A candidate stretch of the Transcript between likely boundaries ("and", "then", commas) that Jev classifies on its own, to decide where a Chain splits.
 _Avoid_: chunk, segment, clause
+
+**Overlay**:
+The glass panel in the top-right corner that shows listening, thinking, and the Card for each Utterance. It never takes focus.
+_Avoid_: HUD, popup, toast
+
+**Card**:
+What the Overlay shows for one Utterance: the Transcript, each Step with Jev's probability, and the outcome.
+_Avoid_: result view, notification

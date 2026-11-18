@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from . import chain, commands  # noqa: F401  (commands registers the commands)
 from .jev import Jev
 from .registry import REGISTRY, Ctx, Plan
+from .view import Card, StepView, View
 
 
 @dataclass
@@ -24,18 +25,24 @@ class Thresholds:
 
 
 GREEN, YELLOW, GREY, RED, BOLD, RESET = "\033[32m", "\033[33m", "\033[90m", "\033[31m", "\033[1m", "\033[0m"
+ANSI = re.compile(r"\033\[[0-9;]*m")
+OUTCOME = re.compile(r"(WOULD RUN|RAN|CONFIRM|IGNORED|FAILED|CANCELLED)\b[\s:]*(.*)", re.S)
+OUTCOMES = {"WOULD RUN": "ran", "RAN": "ran", "CONFIRM": "confirm", "IGNORED": "ignored",
+            "FAILED": "failed", "CANCELLED": "cancelled"}
 CLICKY = re.compile(r"\b(click|tap|press|select|hit|choose|push)\b", re.I)
 
 
 class Engine:
     def __init__(self, auto, jev: Jev, thresholds: Thresholds | None = None, speak: bool = True,
-                 dry_run: bool = False, step_wait: float | None = None):
+                 dry_run: bool = False, step_wait: float | None = None, view: View | None = None):
         self.auto, self.jev, self.t = auto, jev, thresholds or Thresholds()
+        self.view = view or View()
+        self._card: Card | None = None  # what the view will show for the current Utterance
         self.dry_run = dry_run
         # Longest wait for one Chain step to take effect (e.g. the opened app coming to the front).
         self.step_wait = (0.0 if dry_run else 2.0) if step_wait is None else step_wait
         self.speak = speak
-        self.pending: tuple[Plan, str, float] | None = None  # plan, question, asked-at
+        self.pending: tuple[Plan, str, float, list] | None = None  # plan, question, asked-at, step views
         self.pool = ThreadPoolExecutor(max_workers=2)
         self.apps = auto.installed_apps()
 
@@ -44,6 +51,7 @@ class Engine:
         transcript = transcript.strip()
         if not transcript:
             return
+        self.view.thinking(transcript)
         if self.pending and time.time() - self.pending[2] < 30:
             return self._answer_confirmation(transcript)
         self.pending = None
@@ -53,6 +61,7 @@ class Engine:
         # Read the accessibility tree while Jev decides, if this sounds like a click.
         elements_f = self.pool.submit(self.auto.clickable_elements) if CLICKY.search(transcript) else None
         d = self.jev.decide(transcript, front, self.apps, [s.text for s in found])
+        self._card = Card(transcript, [StepView(d.command, d.p)])
         takes_rest = REGISTRY[d.command].takes_rest and d.p >= self.t.act  # e.g. "open Notes and type hi" is one note
         if d.meaningful >= self.t.meaningful and not takes_rest:
             steps = chain.best_split(found, d.spans, self.t.act,
@@ -72,11 +81,14 @@ class Engine:
 
         if d.meaningful < self.t.meaningful:
             head += f" meaningful={d.meaningful:.2f}"
+            self._card.steps = []  # nothing was asked for
             return self._log(head, f"{GREY}IGNORED (filler){RESET}", stt_s, d.latency, start)
         if d.p < self.t.ignore:
             return self._log(head, f"{GREY}IGNORED (unsure){RESET}", stt_s, d.latency, start)
 
         plan = cmd.plan(ctx)
+        if plan is not None:
+            self._card.steps = [StepView(plan.summary, d.p)]
         if plan is None:
             return self._log(head, f"{GREY}IGNORED (couldn't parse arguments){RESET}", stt_s, d.latency, start)
         if plan.p is not None:
@@ -107,6 +119,7 @@ class Engine:
                 ctx.elements = elements_f.result()
             plan = REGISTRY[sd.command].plan(ctx)
             if plan is None or (plan.p is not None and plan.p < self.t.element_ignore):
+                self._card.steps = [StepView(s.text, x.p, dim=k == i) for k, (s, x) in enumerate(steps)]
                 why = plan.summary if plan else "couldn't parse"
                 return self._log(head, f'{GREY}IGNORED (step {i + 1} "{span.text}": {why}){RESET}',
                                  stt_s, d.latency, start)
@@ -114,6 +127,7 @@ class Engine:
             planned.append((span.text, sd, plan))
 
         summary = ", then ".join(p.summary if p else f"click ({text})" for text, _, p in planned)
+        self._card.steps = [StepView(p.summary if p else f"click ({text})", sd.p) for text, sd, p in planned]
         plan = Plan(summary, lambda: self._run_steps(planned))
         risky = any(sd.destructive >= self.t.destructive for _, sd, _ in planned)
         if unsure or risky:
@@ -144,14 +158,15 @@ class Engine:
 
     def _ask(self, plan: Plan, head: str, why: str, stt_s: float, jev_s: float, start: float) -> None:
         question = f"Confirm: {plan.summary}?"
-        self.pending = (plan, question, time.time())
+        self.pending = (plan, question, time.time(), self._card.steps if self._card else [])
         self._log(head, f"{YELLOW}CONFIRM ({why}): {plan.summary} - say yes or no{RESET}", stt_s, jev_s, start)
         if self.speak:
             self.auto.say(question)
 
     def _answer_confirmation(self, reply: str) -> None:
-        plan, question, _ = self.pending
+        plan, question, _, steps = self.pending
         self.pending = None
+        self._card = Card(reply, steps)
         t = time.perf_counter()
         yes = self.jev.is_yes(reply, question)
         head = f'"{reply}" -> confirm yes={yes:.2f}'
@@ -172,3 +187,9 @@ class Engine:
         total = stt_s + (time.perf_counter() - start)
         print(f"{time.strftime('%H:%M:%S')} {head} | stt={stt_s:.2f}s jev={jev_s:.2f}s "
               f"total={total:.2f}s | {result}", flush=True)
+        if self._card is not None:
+            m = OUTCOME.match(ANSI.sub("", result))
+            self._card.outcome, self._card.detail = (OUTCOMES[m.group(1)], m.group(2)) if m else ("", result)
+            self._card.total_s = total
+            self.view.result(self._card)
+            self._card = None
