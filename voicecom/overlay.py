@@ -50,7 +50,7 @@ OUTCOME_TEXT = {"ran": "Ran", "confirm": "Needs your OK", "ignored": "Ignored", 
 
 def _color(outcome: str):
     return {"ran": NSColor.systemGreenColor(), "confirm": NSColor.systemOrangeColor(),
-            "failed": NSColor.systemRedColor()}.get(outcome, NSColor.secondaryLabelColor())
+            "failed": NSColor.systemRedColor()}.get(outcome, NSColor.labelColor())  # ignored/cancelled: plain, readable
 
 
 def _label(text: str, size: float = 13, weight: float = 0.0, color=None, wrap: bool = False, mono: bool = False):
@@ -233,7 +233,7 @@ class Overlay(View):
 
     def _show_listening(self, level: Callable[[], float]) -> None:
         """The word "Listening" in the same style as "Thinking…", and a level meter filling the rest of the row."""
-        word = _label("Listening", 13, 0.4, NSColor.secondaryLabelColor())
+        word = _label("Listening", 13, 0.4)
         meter_w = INNER - word.fittingSize().width - 8  # the label's own 2pt insets make up the rest
         track = _layer_view(meter_w, 4, NSColor.tertiaryLabelColor())
         fill = _layer_view(4, 4, NSColor.secondaryLabelColor(), fixed=False)
@@ -293,7 +293,7 @@ class Overlay(View):
     def _show_result(self, card: Card) -> None:
         color = _color(card.outcome)
         status = OUTCOME_TEXT.get(card.outcome, card.outcome)
-        if card.outcome in ("ignored", "failed") and card.detail:
+        if card.outcome == "failed" and card.detail:  # "Ignored" alone says enough
             status += f" · {card.detail}"
         head = [_label(status, 13, 0.6, color), _spacer()]
         if card.total_s:
