@@ -34,7 +34,7 @@ Each command prints one log line: transcript, chosen command, its probability an
 ```
 14:46:38 "Open Safari." -> open_app p=1.00 conf=1.00 destr=0.03 app=Safari(1.00) | stt=0.21s jev=0.15s total=0.37s | WOULD RUN: open Safari
 14:46:38 "Snap this window to the right." -> snap_right p=1.00 conf=1.00 destr=0.03 | stt=0.23s jev=0.11s total=0.34s | WOULD RUN: snap window right
-14:46:37 "Close this tab." -> close_tab p=1.00 conf=1.00 destr=0.95 | stt=0.30s jev=0.13s total=0.43s | CONFIRM (destructive): close tab - say yes or no
+14:46:37 "Close this tab." -> close_tab p=1.00 conf=1.00 destr=0.95 | stt=0.30s jev=0.13s total=0.43s | CONFIRM (destructive): close tab
 14:11:33 "Snap this window left, open Notes and then snap it right." -> chain snap_left(1.00) → open_app(1.00) → snap_right(0.93) destr=0.03 | stt=0.00s jev=0.14s total=0.15s | WOULD RUN: snap window left, then open Notes, then snap window right
 ```
 
@@ -51,7 +51,7 @@ Each command prints one log line: transcript, chosen command, its probability an
   | Condition | Result |
   | - | - |
   | command p ≥ 0.80, destructive < 0.50 (and element p ≥ 0.70 for clicks) | run immediately |
-  | command p 0.40–0.80, or destructive ≥ 0.50, or element p 0.30–0.70 | ask to confirm (spoken), then a Noul judges your yes/no reply |
+  | command p 0.40–0.80, or destructive ≥ 0.50, or element p 0.30–0.70 | ask to confirm: Run / Cancel on the overlay, one checkbox per step of a Chain, risky steps in red |
   | command p < 0.40, or element p < 0.30 | ignore |
 
   Tune them with `--act` and `--ignore`, or in `voicecom/engine.py:Thresholds`.
@@ -122,7 +122,7 @@ The first run downloads the Whisper model (`base.en`, about 140 MB).
 
 A glass panel in the top-right corner shows what it heard, each Step with Jev's probability, and the outcome. It never takes focus, and it fades after about 2 seconds. `--no-overlay` turns it off.
 
-Other options: `--hotkey {alt_r,cmd_r,ctrl_r,f13,f18,alt}`, `--whisper-model small.en` for better accuracy, and `--quiet` to turn off spoken confirmation prompts.
+Other options: `--hotkey {alt_r,cmd_r,ctrl_r,f13,f18,alt}`, `--whisper-model small.en` for better accuracy, and `--speak` to also ask confirmations out loud.
 
 ## Project layout
 
@@ -130,7 +130,7 @@ Other options: `--hotkey {alt_r,cmd_r,ctrl_r,f13,f18,alt}`, `--whisper-model sma
 voicecom/
   __main__.py        CLI, push-to-talk loop
   stt.py             mic recording + faster-whisper
-  jev.py             every TypeSafe call: decide(), pick_element(), is_yes()
+  jev.py             every TypeSafe call: decide(), pick_element()
   engine.py          confidence gate, confirmations, one-line log
   registry.py        Command / Plan / @command
   commands.py        the 19 commands

@@ -31,7 +31,7 @@ WIDTH = 340
 INNER = WIDTH - 32  # inside the 16pt side insets
 MARGIN = 12  # from the screen's top-right corner, under the menu bar
 SHOW_S = 4.2  # how long a result stays: long enough to check a Chain at a glance
-CONFIRM_S = 30.0
+CONFIRM_S = 10.0  # then the question is dropped, so a forgotten prompt can't run later
 BAR_W = 64
 
 # AppKit constants (spelled out so older pyobjc builds without the newer names still work)
@@ -39,6 +39,7 @@ BORDERLESS, NONACTIVATING = 0, 1 << 7
 STATUS_LEVEL = 25
 ALL_SPACES, STATIONARY, IGNORES_CYCLE, FULLSCREEN_AUX = 1 << 0, 1 << 4, 1 << 6, 1 << 8
 VERTICAL, HORIZONTAL = 1, 0
+SWITCH_BUTTON = 3  # NSButtonTypeSwitch: a checkbox
 ALIGN_LEADING, ALIGN_CENTER_Y = 1, 10
 SPINNER = 1
 HUD_MATERIAL, BEHIND_WINDOW, ACTIVE = 13, 0, 1
@@ -128,7 +129,16 @@ class _Root(NSView):
         return True
 
     def dismiss_(self, sender):
-        self.owner._fade(self.owner._gen)
+        self.owner._dismiss()
+
+    def run_(self, sender):
+        self.owner._answer(run=True)
+
+    def cancel_(self, sender):
+        self.owner._answer(run=False)
+
+    def toggle_(self, sender):
+        self.owner._toggled(sender)
 
 
 class Overlay(View):
@@ -137,6 +147,9 @@ class Overlay(View):
         self._gen = 0  # bumps on every new state, so stale timers do nothing
         self._hovering = False
         self._closable = False
+        self._asking: Card | None = None  # a Card waiting for Run or Cancel
+        self._toggles: list = []  # its per-Step checkboxes
+        self._rows: list = []
         AppHelper.callAfter(self._build)
 
     # ---------- called from any thread ----------
@@ -275,22 +288,29 @@ class Overlay(View):
             return "Unsure", NSColor.systemOrangeColor()
         return "Guessing", NSColor.secondaryLabelColor()
 
-    def _step_row(self, label: str, p: float, dim: bool):
-        word, color = self._confidence(p)
-        name = _fixed(_label(label, 13, 0.0, NSColor.secondaryLabelColor() if dim else None), INNER - BAR_W - 64 - 16)
+    def _step_row(self, step, toggle=None):
+        word, color = self._confidence(step.p)
+        name_w = INNER - BAR_W - 64 - 16 - (26 if toggle is not None else 0)
+        name_color = (NSColor.systemRedColor() if step.risky
+                      else NSColor.secondaryLabelColor() if step.dim else None)
+        name = _fixed(_label(step.label, 13, 0.5 if step.risky else 0.0, name_color), name_w)
+        if step.risky:
+            name.setToolTip_("Jev thinks this could close, delete, send or discard something")
         track = _layer_view(BAR_W, 6, NSColor.tertiaryLabelColor())
-        track.addSubview_(_layer_view(max(6.0, BAR_W * p), 6, color, fixed=False))
+        track.addSubview_(_layer_view(max(6.0, BAR_W * step.p), 6, color, fixed=False))
         # A tick where "sure enough to just do it" starts, so the bar reads against the rule.
         track.addSubview_(_layer_view(1.5, 10, NSColor.labelColor().colorWithAlphaComponent_(0.55),
                                       radius=0, fixed=False))
         track.subviews()[-1].setFrame_(NSMakeRect(BAR_W * self.act - 0.75, -2, 1.5, 10))
         track.layer().setMasksToBounds_(False)
-        row = _row(name, track, _fixed(_label(word, 12, 0.3, color), 64))
-        if dim:
+        parts = ([toggle] if toggle is not None else []) + [name, track, _fixed(_label(word, 12, 0.3, color), 64)]
+        row = _row(*parts)
+        if step.dim:
             row.setAlphaValue_(0.45)
         return row
 
     def _show_result(self, card: Card) -> None:
+        asking = card.outcome == "confirm" and card.on_run is not None
         color = _color(card.outcome)
         status = OUTCOME_TEXT.get(card.outcome, card.outcome)
         if card.outcome == "failed" and card.detail:  # "Ignored" alone says enough
@@ -300,11 +320,30 @@ class Overlay(View):
             head.append(_label(f"{card.total_s:.2f}s", 11, 0.0, NSColor.secondaryLabelColor(), mono=True))
         head.append(_fixed(NSView.alloc().init(), 18, 1))  # room for the close button
         views = [_fixed(_row(*head), INNER), _label(f"“{card.transcript}”", 13, wrap=True)]
+
+        self._toggles, self._rows = [], []
         if card.steps:
             # A column header in plain words is the key: what the bar means, read once.
             views.append(_fixed(_row(_label("Steps", 11, 0.5, NSColor.secondaryLabelColor()), _spacer(),
                                      _label("How sure Jev is", 11, 0.5, NSColor.secondaryLabelColor())), INNER))
-            views += [self._step_row(s.label, s.p, s.dim) for s in card.steps]
+            for i, step in enumerate(card.steps):
+                toggle = None
+                if asking and len(card.steps) > 1:  # untick the Steps you don't want, then Run
+                    toggle = NSButton.checkboxWithTitle_target_action_("", self.root, "toggle:")
+                    toggle.setState_(1)
+                    toggle.setTag_(i)
+                    self._toggles.append(toggle)
+                row = self._step_row(step, toggle)
+                self._rows.append(row)
+                views.append(row)
+
+        if asking:
+            cancel = NSButton.buttonWithTitle_target_action_("Cancel", self.root, "cancel:")
+            run = NSButton.buttonWithTitle_target_action_("Run", self.root, "run:")
+            run.setBezelColor_(NSColor.systemRedColor() if any(s.risky for s in card.steps)
+                               else NSColor.controlAccentColor())
+            views.append(_fixed(_row(_spacer(), cancel, run), INNER))
+        self._asking = card if asking else None
 
         # Countdown: a thin bar that empties toward the left; the panel goes when it's gone.
         seconds = CONFIRM_S if card.outcome == "confirm" else SHOW_S
@@ -323,10 +362,32 @@ class Overlay(View):
                 remaining[0] -= 1 / 30
             left.setFrame_(NSMakeRect(0, 0, max(0.0, INNER * remaining[0] / seconds), 2))
             if remaining[0] <= 0:
+                if self._asking is not None:  # time's up: drop the question rather than run it
+                    return self._answer(run=False)
                 return self._fade(gen)
             AppHelper.callLater(1 / 30, tick)
 
         tick()
+
+    def _toggled(self, sender) -> None:
+        self._rows[sender.tag()].setAlphaValue_(1.0 if sender.state() else 0.45)
+
+    def _answer(self, run: bool) -> None:
+        """Run or Cancel clicked (or the countdown ran out). The engine acts off the main thread."""
+        card, self._asking = self._asking, None
+        if card is None:
+            return
+        if run:
+            selected = [bool(t.state()) for t in self._toggles] or [True] * len(card.steps)
+            self._show_thinking(card.transcript)
+            threading.Thread(target=card.on_run, args=(selected,), daemon=True).start()
+        else:
+            threading.Thread(target=card.on_cancel, daemon=True).start()
+
+    def _dismiss(self) -> None:
+        if self._asking is not None:  # closing a question means no
+            return self._answer(run=False)
+        self._fade(self._gen)
 
     def _fade(self, gen: int) -> None:
         if gen != self._gen:

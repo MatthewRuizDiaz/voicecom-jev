@@ -141,18 +141,6 @@ class Jev:
         p = float(a.probabilities[a.choice])
         return (None if a.choice == NO_ELEMENT else by_key[a.choice]), p
 
-    # ------------------------------------------------------------ confirmations
-    def is_yes(self, reply: str, question: str) -> float:
-        r = self.client.system_one(
-            state={"assistant_asked": question, "user_replied": reply},
-            questions={"yes": Noul(
-                instructions="The user's reply agrees to go ahead.",
-                criteria=NoulCriteria(true="yes, do it, go ahead, confirm, sure",
-                                      false="no, stop, cancel, wait, or unrelated"),
-            )},
-        )
-        return float(r.answers["yes"].noul)
-
 
 def _destructive(subject: str) -> Noul:
     return Noul(

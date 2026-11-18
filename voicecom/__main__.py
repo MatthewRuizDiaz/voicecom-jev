@@ -34,7 +34,7 @@ def main() -> None:
     ap.add_argument("--hotkey", default="alt_r", choices=HOTKEYS, help="push-to-talk key (default: alt_r)")
     ap.add_argument("--whisper-model", default="base.en", help="faster-whisper model (tiny.en, base.en, small.en)")
     ap.add_argument("--model", default="jev-latest", help="TypeSafe model")
-    ap.add_argument("--quiet", action="store_true", help="no spoken confirmation prompts")
+    ap.add_argument("--speak", action="store_true", help="also ask confirmations out loud")
     ap.add_argument("--no-overlay", action="store_true", help="don't show the on-screen panel (terminal log only)")
     ap.add_argument("--act", type=float, default=Thresholds.act, help="probability to run without asking")
     ap.add_argument("--ignore", type=float, default=Thresholds.ignore, help="probability below which to ignore")
@@ -66,21 +66,25 @@ def main() -> None:
         from .overlay import Overlay
         view = Overlay(act=args.act, ignore=args.ignore)
     engine = Engine(auto, Jev(args.model), Thresholds(act=args.act, ignore=args.ignore),
-                    speak=not (args.quiet or typed), dry_run=args.dry_run, view=view)
+                    speak=args.speak, dry_run=args.dry_run, view=view)
     lock = None if typed else _single_instance()  # noqa: F841  (held for the life of the process)
 
     def work() -> None:
         if args.text:
             for line in args.text:
                 engine.handle(line)
-                if engine.pending:  # answer confirmations from the keyboard in text mode
-                    engine.handle(input("  confirm? > "))
+                if engine.pending:  # no buttons to click in a script: answer at the keyboard
+                    yes = input("  run it? [y/N] > ").strip().lower().startswith("y")
+                    engine.confirm() if yes else engine.cancel()
                 if use_overlay:
                     time.sleep(2.6)  # let the panel be seen before the next line (or exit)
         elif args.repl:
             try:
                 while True:
                     engine.handle(input("say> "))
+                    if engine.pending:
+                        yes = input("  run it? [y/N] > ").strip().lower().startswith("y")
+                        engine.confirm() if yes else engine.cancel()
             except EOFError:
                 pass
         else:

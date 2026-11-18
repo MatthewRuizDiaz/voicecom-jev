@@ -27,10 +27,10 @@ class StubAuto:
 class StubJev:
     """spans maps a Span's text to (command, p, destructive, app); unlisted Spans read as dictate."""
 
-    def __init__(self, command, p, destructive=0.0, app=None, element=("Submit", 0.95), yes=0.95,
+    def __init__(self, command, p, destructive=0.0, app=None, element=("Submit", 0.95),
                  meaningful=0.99, app_p=None, spans=None):
         self.d = Decision(command, p, p, destructive, meaningful, app, app_p if app_p is not None else (0.9 if app else 0.0), 0.1)
-        self.element, self.yes, self.spans = element, yes, spans or {}
+        self.element, self.spans = element, spans or {}
         self.asked: list[str] = []
 
     def decide(self, transcript, front, apps, spans=()):
@@ -43,7 +43,6 @@ class StubJev:
     def pick_element(self, transcript, elements, app):
         label, p = self.element
         return next((e for e in elements if e.label == label), None), p
-    def is_yes(self, *a): return self.yes
 
 
 def run(text, jev):
@@ -63,18 +62,18 @@ def test_low_probability_is_ignored():
     assert auto.calls == []
 
 
-def test_unsure_asks_then_runs_on_yes():
+def test_unsure_asks_then_runs_on_run():
     auto, eng = run("make it bigger", StubJev("maximize_window", 0.6))
     assert auto.calls == [] and eng.pending
-    eng.handle("yes")
-    assert auto.calls == [("snap_window", ("max",))]
+    eng.confirm()
+    assert auto.calls == [("snap_window", ("max",))] and eng.pending is None
 
 
 def test_destructive_asks_and_no_cancels():
-    jev = StubJev("close_tab", 0.99, destructive=0.8, yes=0.05)
+    jev = StubJev("close_tab", 0.99, destructive=0.8)
     auto, eng = run("close this tab", jev)
-    assert eng.pending
-    eng.handle("no wait")
+    assert eng.pending and eng.pending.steps[0].risky
+    eng.cancel()
     assert auto.calls == [] and eng.pending is None
 
 
@@ -115,7 +114,7 @@ def test_filler_is_ignored():  # issue #11
 
 def test_unsure_app_pick_confirms_instead_of_literal_name():  # issue #12
     auto, eng = run("open my email", StubJev("open_app", 0.98, app="Mail", app_p=0.2))
-    assert auto.calls == [] and eng.pending and "Mail" in eng.pending[1]
+    assert auto.calls == [] and eng.pending and "Mail" in eng.pending.summary
 
 
 def test_spoken_installed_name_wins_over_weak_pick():  # issue #12
@@ -160,8 +159,9 @@ def test_destructive_step_confirms_the_whole_chain_once():
     jev = StubJev("close_tab", 0.6, spans={"open Safari": ("open_app", 1.0, 0.0, "Safari"),
                                            "close this tab": ("close_tab", 0.99, 0.9, None)})
     auto, eng = run("open Safari then close this tab", jev)
-    assert auto.calls == [] and "open Safari, then close tab" in eng.pending[1]
-    eng.handle("yes")
+    assert auto.calls == [] and "open Safari, then close tab" in eng.pending.summary
+    assert [s.risky for s in eng.pending.steps] == [False, True]
+    eng.confirm()
     assert [c[0] for c in auto.calls] == ["open_app", "close_tab"]
 
 
@@ -240,3 +240,36 @@ def test_view_gets_one_card_per_utterance():
     eng = Engine(StubAuto(), StubJev("close_tab", 0.99, destructive=0.9), speak=False, view=view)
     eng.handle("close this tab")
     assert view.cards[-1].outcome == "confirm"
+
+
+# ---------------------------------------------------------------- overlay confirmations (issue #19)
+CLOSE_CHAIN = {"open Safari": ("open_app", 1.0, 0.0, "Safari"), "close this tab": ("close_tab", 0.99, 0.9, None)}
+
+
+def test_run_with_a_step_switched_off_skips_it():
+    auto, eng = run("open Safari then close this tab", StubJev("close_tab", 0.6, spans=CLOSE_CHAIN))
+    eng.confirm([True, False])
+    assert auto.calls == [("open_app", ("Safari",))]
+
+
+def test_all_steps_switched_off_runs_nothing():
+    auto, eng = run("open Safari then close this tab", StubJev("close_tab", 0.6, spans=CLOSE_CHAIN))
+    eng.confirm([False, False])
+    assert auto.calls == [] and eng.pending is None
+
+
+def test_speaking_again_drops_the_question():
+    auto, eng = run("close this tab", StubJev("close_tab", 0.99, destructive=0.8))
+    eng.jev = StubJev("scroll_down", 0.99)
+    eng.handle("yes")  # not an answer any more: a new utterance, and the old question is gone
+    assert eng.pending is None and [c[0] for c in auto.calls] == ["scroll"]
+
+
+def test_confirm_card_carries_run_and_cancel():
+    view = RecordingView()
+    eng = Engine(StubAuto(), StubJev("close_tab", 0.99, destructive=0.9), speak=False, view=view)
+    eng.handle("close this tab")
+    card = view.cards[-1]
+    assert card.outcome == "confirm" and card.on_run and card.on_cancel and card.steps[0].risky
+    card.on_cancel()
+    assert view.cards[-1].outcome == "cancelled"

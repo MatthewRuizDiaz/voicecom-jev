@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from typing import Callable
 
 from . import chain, commands  # noqa: F401  (commands registers the commands)
 from .jev import Jev
@@ -21,7 +23,6 @@ class Thresholds:
     meaningful: float = 0.30   # Noul below this is filler ("uh", "hmm") and is ignored
     element_act: float = 0.70   # click element probability to run
     element_ignore: float = 0.30
-    yes: float = 0.70        # confirmation Noul
 
 
 GREEN, YELLOW, GREY, RED, BOLD, RESET = "\033[32m", "\033[33m", "\033[90m", "\033[31m", "\033[1m", "\033[0m"
@@ -29,6 +30,16 @@ ANSI = re.compile(r"\033\[[0-9;]*m")
 OUTCOME = re.compile(r"(WOULD RUN|RAN|CONFIRM|IGNORED|FAILED|CANCELLED)\b[\s:]*(.*)", re.S)
 OUTCOMES = {"WOULD RUN": "ran", "RAN": "ran", "CONFIRM": "confirm", "IGNORED": "ignored",
             "FAILED": "failed", "CANCELLED": "cancelled"}
+@dataclass
+class Pending:
+    """A Plan waiting for the user's OK: Run (all or some Steps) or Cancel."""
+
+    transcript: str
+    summary: str
+    steps: list[StepView]
+    make: Callable[[list[bool]], Plan | None]  # the Plan for the Steps left switched on
+
+
 CLICKY = re.compile(r"\b(click|tap|press|select|hit|choose|push)\b", re.I)
 
 
@@ -42,7 +53,8 @@ class Engine:
         # Longest wait for one Chain step to take effect (e.g. the opened app coming to the front).
         self.step_wait = (0.0 if dry_run else 2.0) if step_wait is None else step_wait
         self.speak = speak
-        self.pending: tuple[Plan, str, float, list] | None = None  # plan, question, asked-at, step views
+        self.pending: Pending | None = None
+        self._pending_lock = threading.Lock()  # Run/Cancel arrive from the overlay's thread
         self.pool = ThreadPoolExecutor(max_workers=2)
         self.apps = auto.installed_apps()
 
@@ -51,10 +63,9 @@ class Engine:
         transcript = transcript.strip()
         if not transcript:
             return
+        if self.pending:  # speaking again moves on: the unanswered question is dropped
+            self.cancel("new command")
         self.view.thinking(transcript)
-        if self.pending and time.time() - self.pending[2] < 30:
-            return self._answer_confirmation(transcript)
-        self.pending = None
 
         front = self.auto.frontmost_app()
         found = chain.spans(transcript)
@@ -100,7 +111,9 @@ class Engine:
                   or plan.confirm)
         risky = d.destructive >= self.t.destructive
         if unsure or risky:
-            return self._ask(plan, head, "destructive" if risky else "unsure", stt_s, d.latency, start)
+            self._card.steps[0].risky = risky
+            return self._ask(transcript, plan.summary, lambda sel: plan if sel[0] else None, head,
+                             "destructive" if risky else "unsure", stt_s, d.latency, start)
 
         self._run(plan, head, stt_s, d.latency, start)
 
@@ -127,12 +140,21 @@ class Engine:
             planned.append((span.text, sd, plan))
 
         summary = ", then ".join(p.summary if p else f"click ({text})" for text, _, p in planned)
-        self._card.steps = [StepView(p.summary if p else f"click ({text})", sd.p) for text, sd, p in planned]
-        plan = Plan(summary, lambda: self._run_steps(planned))
-        risky = any(sd.destructive >= self.t.destructive for _, sd, _ in planned)
+        self._card.steps = [StepView(p.summary if p else f"click ({text})", sd.p,
+                                     risky=sd.destructive >= self.t.destructive) for text, sd, p in planned]
+
+        def make(sel: list[bool]) -> Plan | None:
+            chosen = [step for step, on in zip(planned, sel) if on]
+            if not chosen:
+                return None
+            names = ", then ".join(p.summary if p else f"click ({text})" for text, _, p in chosen)
+            return Plan(names, lambda: self._run_steps(chosen))
+
+        risky = any(s.risky for s in self._card.steps)
         if unsure or risky:
-            return self._ask(plan, head, "destructive" if risky else "unsure", stt_s, d.latency, start)
-        self._run(plan, head, stt_s, d.latency, start)
+            return self._ask(transcript, summary, make, head, "destructive" if risky else "unsure",
+                             stt_s, d.latency, start)
+        self._run(make([True] * len(planned)), head, stt_s, d.latency, start)
 
     def _run_steps(self, planned) -> None:
         for i, (text, sd, plan) in enumerate(planned):
@@ -156,24 +178,40 @@ class Engine:
                 time.sleep(0.02)
         time.sleep(prev.extra.get("settle", 0.25) if prev else 0.25)
 
-    def _ask(self, plan: Plan, head: str, why: str, stt_s: float, jev_s: float, start: float) -> None:
-        question = f"Confirm: {plan.summary}?"
-        self.pending = (plan, question, time.time(), self._card.steps if self._card else [])
-        self._log(head, f"{YELLOW}CONFIRM ({why}): {plan.summary} - say yes or no{RESET}", stt_s, jev_s, start)
+    def _ask(self, transcript: str, summary: str, make, head: str, why: str,
+              stt_s: float, jev_s: float, start: float) -> None:
+        """Hold the Plan until the user clicks Run or Cancel on the overlay (y/n in text mode)."""
+        with self._pending_lock:
+            self.pending = Pending(transcript, summary, self._card.steps, make)
+        self._card.on_run, self._card.on_cancel = self.confirm, self.cancel
+        self._log(head, f"{YELLOW}CONFIRM ({why}): {summary}{RESET}", stt_s, jev_s, start)
         if self.speak:
-            self.auto.say(question)
+            self.auto.say(f"Confirm: {summary}?")
 
-    def _answer_confirmation(self, reply: str) -> None:
-        plan, question, _, steps = self.pending
-        self.pending = None
-        self._card = Card(reply, steps)
-        t = time.perf_counter()
-        yes = self.jev.is_yes(reply, question)
-        head = f'"{reply}" -> confirm yes={yes:.2f}'
-        if yes >= self.t.yes:
-            self._run(plan, head, 0.0, time.perf_counter() - t, t)
-        else:
-            self._log(head, f"{GREY}CANCELLED: {plan.summary}{RESET}", 0.0, time.perf_counter() - t, t)
+    def confirm(self, selected: list[bool] | None = None) -> None:
+        """Run the pending Steps the user left switched on (all of them by default)."""
+        with self._pending_lock:
+            p, self.pending = self.pending, None
+        if p is None:
+            return
+        start = time.perf_counter()
+        sel = list(selected) if selected is not None else [True] * len(p.steps)
+        self._card = Card(p.transcript, [StepView(s.label, s.p, dim=not on, risky=s.risky)
+                                         for s, on in zip(p.steps, sel)])
+        head = f'"{p.transcript}" -> confirmed {sum(sel)} of {len(sel)} step{"s" * (len(sel) != 1)}'
+        plan = p.make(sel)
+        if plan is None:
+            return self._log(head, f"{GREY}CANCELLED: no steps left on{RESET}", 0.0, 0.0, start)
+        self._run(plan, head, 0.0, 0.0, start)
+
+    def cancel(self, why: str = "cancelled") -> None:
+        with self._pending_lock:
+            p, self.pending = self.pending, None
+        if p is None:
+            return
+        self._card = Card(p.transcript, p.steps)
+        self._log(f'"{p.transcript}" -> {why}', f"{GREY}CANCELLED: {p.summary}{RESET}", 0.0, 0.0,
+                  time.perf_counter())
 
     def _run(self, plan: Plan, head: str, stt_s: float, jev_s: float, start: float) -> None:
         try:

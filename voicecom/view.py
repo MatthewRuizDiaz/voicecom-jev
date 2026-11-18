@@ -10,7 +10,8 @@ from typing import Callable
 class StepView:
     label: str  # what it will do / did ("open Safari"), or the words Jev couldn't use
     p: float  # Jev's probability for this Step's Command
-    dim: bool = False  # the part that wasn't understood
+    dim: bool = False  # the part that wasn't understood, or a Step switched off
+    risky: bool = False  # Jev's destructive Noul says this Step could lose work
 
 
 @dataclass
@@ -20,6 +21,9 @@ class Card:
     outcome: str = ""  # ran | confirm | ignored | failed | cancelled
     detail: str = ""  # why, e.g. "unsure" or the error
     total_s: float = 0.0
+    # Set when the outcome is "confirm": the overlay's Run (with which Steps are on) and Cancel.
+    on_run: Callable[[list[bool]], None] | None = None
+    on_cancel: Callable[[], None] | None = None
 
 
 class View:

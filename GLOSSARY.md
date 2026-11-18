@@ -52,7 +52,7 @@ _Avoid_: filter, policy, threshold check
 Gate outcome: perform the Plan immediately.
 
 **Confirm**:
-Gate outcome: ask the user aloud, then judge the next Utterance as a yes or no.
+Gate outcome: hold the Plan and show Run and Cancel on the Overlay, with a checkbox per Step of a Chain. It's dropped after 10 seconds or when the user speaks again.
 _Avoid_: prompt, verify
 
 **Ignore**:
