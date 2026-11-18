@@ -184,3 +184,10 @@ def test_click_after_other_steps_reads_the_screen_at_its_turn():
                                          "click Submit": ("click", 0.97, 0.0, None)})
     auto, _ = run("open Safari then click Submit", jev)
     assert [c[0] for c in auto.calls] == ["open_app", "click"]
+
+
+def test_type_drops_whispers_period_but_keeps_questions():
+    auto, _ = run("Type hello.", StubJev("type_text", 0.99))
+    assert auto.calls == [("type_text", ("hello",))]
+    auto, _ = run("Type are you free?", StubJev("type_text", 0.99))
+    assert auto.calls == [("type_text", ("are you free?",))]

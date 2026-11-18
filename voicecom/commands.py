@@ -87,6 +87,8 @@ def press_keys(ctx: Ctx):
          "E.g. 'type hello world', 'write see you tomorrow'.")
 def type_text(ctx: Ctx):
     text = parse.after(ctx.transcript, "type out", "type", "write", "enter the text", keep_end=True)
+    if text.endswith(".") and not text.endswith(".."):
+        text = text[:-1]  # Whisper ends every Transcript with a period; keep ? and ! the speaker meant
     if text:
         return Plan(f"type {text!r}", lambda: ctx.auto.type_text(text))
 

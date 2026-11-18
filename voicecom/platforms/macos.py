@@ -10,7 +10,9 @@ from urllib.parse import quote_plus
 
 import ApplicationServices as AX
 import Quartz
-from AppKit import NSURL, NSDate, NSRunLoop, NSScreen, NSWorkspace
+from AppKit import NSURL, NSApplication, NSDate, NSRunLoop, NSScreen, NSWorkspace
+
+NS_ACCESSORY = 1  # NSApplicationActivationPolicyAccessory: no Dock icon, may still show panels
 
 from .base import Automation, Element
 
@@ -73,6 +75,8 @@ def _osascript(script: str) -> str:
 
 class MacAutomation(Automation):
     def __init__(self, warn: bool = True):
+        # Using AppKit makes the Python process a Dock app that bounces forever; voicecom is a background tool.
+        NSApplication.sharedApplication().setActivationPolicy_(NS_ACCESSORY)
         if warn and not AX.AXIsProcessTrusted():
             print("! Accessibility permission is missing: clicking, typing and window snapping won't work.\n"
                   "  Run: .venv/bin/python -m voicecom --check")

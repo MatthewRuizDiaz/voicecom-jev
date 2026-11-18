@@ -77,8 +77,28 @@ def main() -> None:
     listen(engine, args)
 
 
+def _single_instance() -> object:
+    """Two listeners would both act on every command ("hello" typed twice), so allow one."""
+    import fcntl
+    import os
+    import tempfile
+
+    lock = open(os.path.join(tempfile.gettempdir(), "voicecom.lock"), "a+")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        lock.seek(0)
+        sys.exit(f"voicecom is already running (pid {lock.read().strip() or '?'}). Stop it first with Ctrl+C in its window.")
+    lock.truncate(0)
+    lock.write(str(os.getpid()))
+    lock.flush()
+    return lock  # keep it open: the lock lasts as long as this process
+
+
 def listen(engine: Engine, args) -> None:
     from pynput import keyboard
+
+    lock = _single_instance()  # noqa: F841
 
     from .stt import Recorder, Transcriber
 
