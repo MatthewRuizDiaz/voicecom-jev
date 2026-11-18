@@ -283,6 +283,17 @@ class MacAutomation(Automation):
         if item is None or AX.AXUIElementPerformAction(item, "AXPress") != 0:
             self.press(["cmd", "t"])
 
+    def new_note(self, text: str) -> None:
+        # Through Notes' scripting interface, so it works whatever is focused. The text goes in as an
+        # argument, never spliced into the script, and the body is HTML, so escape it.
+        body = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        script = ('on run argv\n tell application "Notes"\n'
+                  '  set n to make new note with properties {body:item 1 of argv}\n'
+                  '  show n\n  activate\n end tell\nend run')
+        out = subprocess.run(["osascript", "-e", script, body], capture_output=True, text=True)
+        if out.returncode != 0:
+            raise RuntimeError(out.stderr.strip() or "Notes refused to create the note")
+
     def close_tab(self) -> None:
         self.press(["cmd", "w"])
 

@@ -56,15 +56,19 @@ def spans(text: str) -> list[Span]:
             for i in range(len(ps)) for j in range(i, len(ps)) if (i, j) != (0, len(ps) - 1)]
 
 
-def best_split(found: list[Span], decisions: list, act: float, dictate: str = "dictate") -> list[tuple[Span, object]] | None:
+def best_split(found: list[Span], decisions: list, act: float, dictate: str = "dictate",
+               takes_rest: frozenset[str] = frozenset()) -> list[tuple[Span, object]] | None:
     """The split into the most Steps (2..MAX_STEPS) whose every Span is a confident non-dictate Command.
 
-    Ties go to the higher product of probabilities. None means: treat the sentence as one Command.
+    A Command in takes_rest (e.g. new_note) must run to the end of the sentence, so "open a new note
+    and type hello" stays whole. Ties go to the higher product of probabilities. None means: treat
+    the sentence as one Command.
     """
     if not found:
         return None
     n = max(s.last for s in found) + 1
-    ok = {(s.first, s.last): (s, d) for s, d in zip(found, decisions) if d.command != dictate and d.p >= act}
+    ok = {(s.first, s.last): (s, d) for s, d in zip(found, decisions)
+          if d.command != dictate and d.p >= act and (d.command not in takes_rest or s.last == n - 1)}
     # best[(k, steps)] = (log-probability, chosen spans) covering pieces[:k] in that many steps
     best: dict[tuple[int, int], tuple[float, list]] = {(0, 0): (0.0, [])}
     for end in range(1, n + 1):

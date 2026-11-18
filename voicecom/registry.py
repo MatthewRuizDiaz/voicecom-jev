@@ -40,14 +40,15 @@ class Command:
     description: str
     plan: Callable[[Ctx], Plan | None]
     uses_app: bool = False
+    takes_rest: bool = False  # its text runs to the end of the sentence, so a Chain can't split after it
 
 
 REGISTRY: dict[str, Command] = {}
 
 
-def command(name: str, description: str, uses_app: bool = False):
+def command(name: str, description: str, uses_app: bool = False, takes_rest: bool = False):
     def register(fn: Callable[[Ctx], Plan | None]):
-        REGISTRY[name] = Command(name, description, fn, uses_app)
+        REGISTRY[name] = Command(name, description, fn, uses_app, takes_rest)
         return fn
 
     return register

@@ -74,6 +74,10 @@ class Automation(ABC):
     @abstractmethod
     def close_tab(self) -> None: ...
 
+    @abstractmethod
+    def new_note(self, text: str) -> None:
+        """Create a note holding text (may be empty) and show it."""
+
     # --- feedback ---
     def search_url(self, query: str) -> str:
         """URL for a web search with the user's chosen search engine."""

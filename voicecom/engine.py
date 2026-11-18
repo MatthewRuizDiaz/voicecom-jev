@@ -54,7 +54,8 @@ class Engine:
         elements_f = self.pool.submit(self.auto.clickable_elements) if CLICKY.search(transcript) else None
         d = self.jev.decide(transcript, front, self.apps, [s.text for s in found])
         if d.meaningful >= self.t.meaningful:
-            steps = chain.best_split(found, d.spans, self.t.act)
+            steps = chain.best_split(found, d.spans, self.t.act,
+                                     takes_rest=frozenset(c.name for c in REGISTRY.values() if c.takes_rest))
             if steps:
                 return self._handle_chain(transcript, steps, d, elements_f, stt_s, start)
 

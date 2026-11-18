@@ -159,6 +159,27 @@ def web_search(ctx: Ctx):
         return Plan(f"search {q!r}", lambda: ctx.auto.open_url(url), extra={"settle": 1.0})  # page load
 
 
+# ---------------------------------------------------------------- notes
+NOTE_LEADS = ("open a new note and type", "open a new note and write", "make a new note saying",
+              "make a note saying", "create a new note saying", "create a note saying", "new note saying",
+              "make a new note", "create a new note", "open a new note", "start a new note", "make a note",
+              "create a note", "write a note", "take a note", "jot down", "new note", "note that", "note")
+
+
+@command("new_note", "Create a new note in the Notes app containing what the user says. E.g. 'new note "
+         "call the dentist', 'make a note saying buy milk', 'open a new note and type meeting at 3'.",
+         takes_rest=True)
+def new_note(ctx: Ctx):
+    text = parse.after(ctx.transcript, *NOTE_LEADS, keep_end=True)
+    text = re.sub(r"^(saying|that says|that|with|and type|and write|to say)\b[\s:,]*", "", text, flags=re.I)
+    if text.endswith(".") and not text.endswith(".."):
+        text = text[:-1]
+    if text.lower() == parse.clean(ctx.transcript).lower():  # nothing matched: don't put the command in the note
+        text = ""
+    return Plan(f"new note {text!r}" if text else "new empty note", lambda: ctx.auto.new_note(text),
+                extra={"front": "Notes"})
+
+
 # ---------------------------------------------------------------- fallback
 @command(DICTATE, "Not a command for the computer: ordinary speech or a sentence to be typed out "
          "as dictation.")

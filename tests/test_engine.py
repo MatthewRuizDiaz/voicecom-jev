@@ -191,3 +191,27 @@ def test_type_drops_whispers_period_but_keeps_questions():
     assert auto.calls == [("type_text", ("hello",))]
     auto, _ = run("Type are you free?", StubJev("type_text", 0.99))
     assert auto.calls == [("type_text", ("are you free?",))]
+
+
+# ---------------------------------------------------------------- new_note (issue #23)
+def test_new_note_takes_the_spoken_text():
+    for said, text in [("New note, call the dentist tomorrow.", "call the dentist tomorrow"),
+                       ("Make a note saying buy milk.", "buy milk"),
+                       ("Open a new note and type meeting at 3.", "meeting at 3"),
+                       ("Note that the wifi password changed.", "the wifi password changed")]:
+        auto, _ = run(said, StubJev("new_note", 0.97))
+        assert auto.calls == [("new_note", (text,))], said
+
+
+def test_new_note_is_not_split_into_open_then_type():
+    jev = StubJev("new_note", 0.95, spans={"open a new note": ("new_note", 0.95, 0.0, None),
+                                           "type hello": ("type_text", 0.99, 0.0, None)})
+    auto, _ = run("open a new note and type hello", jev)
+    assert auto.calls == [("new_note", ("hello",))]
+
+
+def test_new_note_can_be_the_last_step():
+    jev = StubJev("dictate", 0.5, spans={"snap this left": ("snap_left", 0.99, 0.0, None),
+                                         "make a note saying hi": ("new_note", 0.96, 0.0, None)})
+    auto, _ = run("snap this left and make a note saying hi", jev)
+    assert auto.calls == [("snap_window", ("left",)), ("new_note", ("hi",))]

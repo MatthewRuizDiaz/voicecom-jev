@@ -16,7 +16,7 @@ Speech is transcribed locally with [faster-whisper](https://github.com/SYSTRAN/f
 hold Right Option ──► record mic ──► faster-whisper (local) ──► transcript
                                                                     │
             ┌───────────────────── one Jev request ─────────────────┤
-            │  Choice  "command":     which of 18 commands?         │
+            │  Choice  "command":     which of 19 commands?         │
             │  Noul    "destructive": would this lose work?         │
             │  Noul    "meaningful":  real speech, or "uh"/"hmm"?   │
             │  Choice  "app":         which installed app is named? │  (speculative)
@@ -74,6 +74,7 @@ Anything Jev doesn't extract is parsed in ordinary code (`voicecom/parse.py`): v
 | `set_volume` | "set volume to thirty percent" |
 | `mute` | "mute" |
 | `new_tab` / `close_tab` | "new tab", "close this tab" |
+| `new_note` | "new note call the dentist", "make a note saying buy milk", "open a new note and type …" |
 | `web_search` | "search for the best tacos in Austin" |
 | `dictate` | anything that isn't a command gets typed as-is |
 
@@ -130,7 +131,7 @@ voicecom/
   jev.py             every TypeSafe call: decide(), pick_element(), is_yes()
   engine.py          confidence gate, confirmations, one-line log
   registry.py        Command / Plan / @command
-  commands.py        the 18 commands
+  commands.py        the 19 commands
   chain.py           several commands in one sentence: Spans and the best split
   parse.py           numbers, key chords, free text
   platforms/
