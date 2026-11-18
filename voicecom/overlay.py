@@ -7,6 +7,8 @@ clicks, so actions still land in the app you were using.
 
 from __future__ import annotations
 
+import os
+import signal
 import sys
 import threading
 from typing import Callable
@@ -232,5 +234,16 @@ def run_app(work: Callable[[], None]) -> None:
             sys.stdout.flush()  # stopping AppKit exits the process without flushing Python's buffers
             AppHelper.callAfter(AppHelper.stopEventLoop)
 
+    # Python only runs signal handlers when the main thread runs Python code, and NSApp.run() sits in C,
+    # so wake it every 0.2s; Ctrl+C then quits straight away.
+    def on_sigint(*_):
+        sys.stdout.flush()
+        os._exit(130)
+
+    def wake():
+        AppHelper.callLater(0.2, wake)
+
+    signal.signal(signal.SIGINT, on_sigint)
+    wake()
     threading.Thread(target=worker, daemon=True).start()
-    AppHelper.runEventLoop(installInterrupt=True)
+    AppHelper.runEventLoop(installInterrupt=False)
