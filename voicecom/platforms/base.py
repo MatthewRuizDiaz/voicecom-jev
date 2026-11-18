@@ -75,11 +75,17 @@ class Automation(ABC):
     def close_tab(self) -> None: ...
 
     # --- feedback ---
+    def search_url(self, query: str) -> str:
+        """URL for a web search with the user's chosen search engine."""
+        from urllib.parse import quote_plus
+        return f"https://www.google.com/search?q={quote_plus(query)}"
+
     def say(self, text: str) -> None:  # optional spoken feedback
         pass
 
 
-READ_ONLY = {"frontmost_app", "installed_apps", "clickable_elements", "get_volume", "new_tab_target", "say"}
+READ_ONLY = {"frontmost_app", "installed_apps", "clickable_elements", "get_volume", "new_tab_target", "say",
+             "search_url"}
 
 
 class DryRun:

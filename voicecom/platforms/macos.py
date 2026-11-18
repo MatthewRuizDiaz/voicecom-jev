@@ -6,6 +6,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
+from urllib.parse import quote_plus
 
 import ApplicationServices as AX
 import Quartz
@@ -42,6 +43,19 @@ CHROMIUM_HINTS = ("chrome", "chromium", "brave", "edge", "arc", "electron", "sla
 
 BROWSERS = ("safari", "chrome", "chromium", "brave", "arc", "firefox", "edge", "opera", "vivaldi",
             "orion", "zen", "dia", "duckduckgo")
+
+# Typing into one of these (or into nothing) goes nowhere useful: lists jump to the typed letter.
+NOT_TYPABLE_ROLES = {"AXList", "AXOutline", "AXTable", "AXBrowser", "AXApplication", "AXWindow"}
+
+# macOS's system web search provider (System Settings / Safari "Search engine") -> query URL.
+SEARCH_URLS = {
+    "com.google": "https://www.google.com/search?q={}",
+    "com.duckduckgo": "https://duckduckgo.com/?q={}",
+    "com.bing": "https://www.bing.com/search?q={}",
+    "com.yahoo": "https://search.yahoo.com/search?p={}",
+    "org.ecosia": "https://www.ecosia.org/search?q={}",
+    "com.ecosia": "https://www.ecosia.org/search?q={}",
+}
 
 APP_DIRS = ["/Applications", "/Applications/Utilities", "/System/Applications",
             "/System/Applications/Utilities", str(Path.home() / "Applications")]
@@ -185,6 +199,10 @@ class MacAutomation(Automation):
             time.sleep(0.01)
 
     def type_text(self, text: str) -> None:
+        err, focused = AX.AXUIElementCopyAttributeValue(AX.AXUIElementCreateSystemWide(), "AXFocusedUIElement", None)
+        role = _attr(focused, "AXRole") if focused is not None else None
+        if focused is None or role in NOT_TYPABLE_ROLES:
+            raise RuntimeError(f"nothing to type into in {self.frontmost_app()}: click into a text field first")
         for i in range(0, len(text), 20):  # the API takes at most 20 UTF-16 units per event
             chunk = text[i:i + 20]
             for down in (True, False):
@@ -216,6 +234,13 @@ class MacAutomation(Automation):
 
     def toggle_mute(self) -> None:
         _osascript("set volume output muted not (output muted of (get volume settings))")
+
+    def search_url(self, query: str) -> str:
+        out = subprocess.run(["defaults", "read", "-g", "NSPreferredWebServices"], capture_output=True, text=True).stdout
+        for provider, template in SEARCH_URLS.items():
+            if f'"{provider}"' in out or f"= {provider};" in out:
+                return template.format(quote_plus(query))
+        return super().search_url(query)
 
     def open_url(self, url: str) -> None:
         subprocess.run(["open", url], check=False)

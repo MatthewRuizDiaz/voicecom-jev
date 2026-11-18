@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import quote_plus
 
 from . import parse
 from .registry import Ctx, Plan, command
@@ -154,7 +153,7 @@ def web_search(ctx: Ctx):
                     "search for", "search", "google",
                     "look up", "find me", "find")
     if q:
-        url = f"https://www.google.com/search?q={quote_plus(q)}"
+        url = ctx.auto.search_url(q)  # the user's own search engine
         return Plan(f"search {q!r}", lambda: ctx.auto.open_url(url), extra={"settle": 1.0})  # page load
 
 

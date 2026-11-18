@@ -18,6 +18,7 @@ class StubAuto:
     def get_volume(self): return 40
     def new_tab_target(self): return "Safari"
     def say(self, text): pass
+    def search_url(self, q): return f"https://duckduckgo.com/?q={q}"
 
     def __getattr__(self, name):
         return lambda *a: self.calls.append((name, a))
