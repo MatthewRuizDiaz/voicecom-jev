@@ -64,7 +64,7 @@ def main() -> None:
     view = View()
     if use_overlay:
         from .overlay import Overlay
-        view = Overlay()
+        view = Overlay(act=args.act)
     engine = Engine(auto, Jev(args.model), Thresholds(act=args.act, ignore=args.ignore),
                     speak=not (args.quiet or typed), dry_run=args.dry_run, view=view)
     lock = None if typed else _single_instance()  # noqa: F841  (held for the life of the process)

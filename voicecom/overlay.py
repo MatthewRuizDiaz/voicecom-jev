@@ -10,20 +10,24 @@ from __future__ import annotations
 import os
 import signal
 import sys
+import math
 import threading
 from typing import Callable
 
 import objc
-from AppKit import (NSApplication, NSBackingStoreBuffered, NSColor, NSFont, NSLevelIndicator,
-                    NSLineBreakByTruncatingTail, NSMakeRect, NSPanel, NSProgressIndicator, NSScreen,
+from AppKit import (NSApplication, NSBackingStoreBuffered, NSColor, NSFont, NSLineBreakByTruncatingTail,
+                    NSMakeRect, NSPanel, NSProgressIndicator, NSScreen,
                     NSStackView, NSTextField, NSView, NSVisualEffectView)
 from PyObjCTools import AppHelper
+from Quartz import CABasicAnimation
 
 from .view import Card, View
 
 WIDTH = 340
 MARGIN = 12  # from the screen's top-right corner, under the menu bar
-SHOW_S = 2.2  # how long a result stays before fading
+SHOW_S = 4.2  # how long a result stays: long enough to check a Chain at a glance
+PILL_W = 120  # the listening state is just a dot and a meter, out of the way
+METER_W = 72
 CONFIRM_S = 30.0
 
 # AppKit constants (spelled out so older pyobjc builds without the newer names still work)
@@ -33,7 +37,6 @@ ALL_SPACES, STATIONARY, IGNORES_CYCLE, FULLSCREEN_AUX = 1 << 0, 1 << 4, 1 << 6, 
 VERTICAL, HORIZONTAL = 1, 0
 ALIGN_LEADING, ALIGN_CENTER_Y = 1, 10
 SPINNER = 1
-LEVEL_CONTINUOUS = 1
 HUD_MATERIAL, BEHIND_WINDOW, ACTIVE = 13, 0, 1
 
 OUTCOME_TEXT = {"ran": "Ran", "confirm": "Needs OK", "ignored": "Ignored", "failed": "Failed",
@@ -90,7 +93,8 @@ def _row(*views, spacing: float = 8):
 
 
 class Overlay(View):
-    def __init__(self):
+    def __init__(self, act: float = 0.80):
+        self.act = act  # the run threshold, for the key under the bars
         self._gen = 0  # bumps on every new state, so stale fade timers do nothing
         self._level_fn: Callable[[], float] | None = None
         AppHelper.callAfter(self._build)
@@ -126,7 +130,9 @@ class Overlay(View):
         self.stack.setAlignment_(ALIGN_LEADING)
         self.stack.setSpacing_(7)
         self.stack.setEdgeInsets_((12, 16, 12, 16))
-        _fixed(self.stack, WIDTH)
+        self.stack.setTranslatesAutoresizingMaskIntoConstraints_(False)
+        self._width = self.stack.widthAnchor().constraintEqualToConstant_(WIDTH)
+        self._width.setActive_(True)
 
         glass_cls = objc.lookUpClass("NSGlassEffectView") if _has("NSGlassEffectView") else None
         if glass_cls is not None:  # Liquid Glass, macOS 26+
@@ -145,9 +151,10 @@ class Overlay(View):
         self.glass, self.panel = glass, panel
         panel.setContentView_(glass)
 
-    def _set(self, views: list) -> None:
+    def _set(self, views: list, width: float = WIDTH) -> None:
         """Swap the panel's contents, size it to fit, pin it top-right, and show it without focus."""
         self._gen += 1
+        self._width.setConstant_(width)
         for v in list(self.stack.arrangedSubviews()):
             self.stack.removeArrangedSubview_(v)
             v.removeFromSuperview()
@@ -156,25 +163,50 @@ class Overlay(View):
         self.stack.layoutSubtreeIfNeeded()
         h = self.stack.fittingSize().height
         screen = NSScreen.mainScreen().visibleFrame()
-        x = screen.origin.x + screen.size.width - WIDTH - MARGIN
+        x = screen.origin.x + screen.size.width - width - MARGIN
         y = screen.origin.y + screen.size.height - h - MARGIN
-        self.panel.setFrame_display_(NSMakeRect(x, y, WIDTH, h), True)
-        self.glass.setFrame_(NSMakeRect(0, 0, WIDTH, h))
+        self.panel.setFrame_display_(NSMakeRect(x, y, width, h), True)
+        self.glass.setFrame_(NSMakeRect(0, 0, width, h))
         self.panel.setAlphaValue_(1.0)
         self.panel.orderFrontRegardless()
 
     def _show_listening(self, level: Callable[[], float]) -> None:
-        meter = _fixed(NSLevelIndicator.alloc().initWithFrame_(NSMakeRect(0, 0, 200, 6)), WIDTH - 120, 6)
-        meter.setLevelIndicatorStyle_(LEVEL_CONTINUOUS)
-        meter.setMaxValue_(1.0)
-        self._set([_row(_label("● Listening", 13, 0.4, NSColor.systemRedColor()), meter, spacing=12)])
-        self._level_fn, gen = level, self._gen
+        """A small pill: a softly pulsing red dot and a calm level meter. No text."""
+        dot = _fixed(NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 8, 8)), 8, 8)
+        dot.setWantsLayer_(True)
+        dot.layer().setCornerRadius_(4)
+        dot.layer().setBackgroundColor_(NSColor.systemRedColor().CGColor())
+        pulse = CABasicAnimation.animationWithKeyPath_("opacity")
+        pulse.setFromValue_(1.0)
+        pulse.setToValue_(0.35)
+        pulse.setDuration_(0.8)
+        pulse.setAutoreverses_(True)
+        pulse.setRepeatCount_(1e9)
+        dot.layer().addAnimation_forKey_(pulse, "pulse")
+
+        track = _fixed(NSView.alloc().initWithFrame_(NSMakeRect(0, 0, METER_W, 4)), METER_W, 4)
+        track.setWantsLayer_(True)
+        track.layer().setCornerRadius_(2)
+        track.layer().setBackgroundColor_(NSColor.tertiaryLabelColor().CGColor())
+        fill = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 4, 4))
+        fill.setWantsLayer_(True)
+        fill.layer().setCornerRadius_(2)
+        fill.layer().setBackgroundColor_(NSColor.labelColor().colorWithAlphaComponent_(0.7).CGColor())
+        track.addSubview_(fill)
+
+        self._set([_row(dot, track, spacing=10)], width=PILL_W)
+        gen, shown = self._gen, [0.0]
 
         def tick():
             if gen != self._gen:
                 return
-            meter.setDoubleValue_(min(1.0, (self._level_fn() or 0.0) * 12))
-            AppHelper.callLater(0.05, tick)
+            rms = level() or 0.0
+            # Loudness in decibels, -55 dB (room) to -20 dB (speech) -> 0..1, then eased: rises fast,
+            # falls slowly, so the meter follows the voice instead of every syllable.
+            target = min(1.0, max(0.0, (20 * math.log10(rms + 1e-9) + 55) / 35))
+            shown[0] += (target - shown[0]) * (0.3 if target > shown[0] else 0.08)
+            fill.setFrame_(NSMakeRect(0, 0, max(4.0, METER_W * shown[0]), 4))
+            AppHelper.callLater(1 / 30, tick)
 
         tick()
 
@@ -196,12 +228,15 @@ class Overlay(View):
         views = [_label(status, 12, 0.5, color), _label(f"“{card.transcript}”", 13, wrap=True)]
         for s in card.steps:
             name = _fixed(_label(s.label, 12, 0.0, NSColor.secondaryLabelColor() if s.dim else None), WIDTH - 32 - 70 - 36 - 16)
-            row = _row(name, _bar(s.p, color), _label(f"{s.p:.2f}", 11, 0.0, NSColor.secondaryLabelColor(), mono=True))
+            row = _row(name, _bar(s.p, color), _label(f"{s.p:.0%}", 11, 0.0, NSColor.secondaryLabelColor(), mono=True))
             if s.dim:
                 row.setAlphaValue_(0.45)
             views.append(row)
+        if card.steps:  # a key, so the bars make sense to someone who's never heard of Jev
+            key = f"How sure Jev is of each step. Runs at {self.act:.0%}+, asks below that."
+            views.append(_label(key, 10, 0.0, NSColor.tertiaryLabelColor(), wrap=True))
         if card.total_s:
-            views.append(_label(f"{card.total_s:.2f}s", 10, 0.0, NSColor.tertiaryLabelColor(), mono=True))
+            views.append(_label(f"{card.total_s:.2f}s total", 10, 0.0, NSColor.tertiaryLabelColor(), mono=True))
         self._set(views)
         gen = self._gen
         AppHelper.callLater(CONFIRM_S if card.outcome == "confirm" else SHOW_S, self._fade, gen)
