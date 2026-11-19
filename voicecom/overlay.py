@@ -17,9 +17,9 @@ from typing import Callable
 
 import objc
 from AppKit import (NSApplication, NSBackingStoreBuffered, NSButton, NSColor, NSFont, NSImage,
-                    NSLineBreakByTruncatingTail, NSMakeRect, NSPanel, NSProgressIndicator, NSScreen,
-                    NSTrackingArea,
-                    NSStackView, NSTextField, NSView, NSVisualEffectView)
+                    NSImageSymbolConfiguration, NSLineBreakByTruncatingTail, NSMakeRect, NSPanel,
+                    NSProgressIndicator, NSScreen, NSStackView, NSTextField, NSTrackingArea, NSView,
+                    NSVisualEffectView)
 from PyObjCTools import AppHelper
 
 from .view import Card, View
@@ -33,6 +33,9 @@ MARGIN = 12  # from the screen's top-right corner, under the menu bar
 SHOW_S = 4.2  # how long a result stays: long enough to check a Chain at a glance
 CONFIRM_S = 10.0  # then the question is dropped, so a forgotten prompt can't run later
 BAR_W = 64
+CLOSE = 20  # the close button's diameter
+OVERHANG = 10  # transparent room above and left of the card, for the close button to hang into
+CLOSE_INSET = 2  # its centre sits this far inside the card's top-left corner
 
 # AppKit constants (spelled out so older pyobjc builds without the newer names still work)
 BORDERLESS, NONACTIVATING = 0, 1 << 7
@@ -185,40 +188,57 @@ class Overlay(View):
         self.stack.setEdgeInsets_((12, 16, 12, 16))
         _fixed(self.stack, WIDTH)
 
-        root = _Root.alloc().initWithOwner_(self)
-        root.setTranslatesAutoresizingMaskIntoConstraints_(False)
-        root.addSubview_(self.stack)
+        # The card's contents live inside the glass; the glass and the close button sit in a slightly
+        # bigger, transparent root, so the button can overhang the card's top-left corner like the
+        # close button on a macOS notification. The root also tracks hover, button included.
+        content = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, WIDTH, 60))
+        content.addSubview_(self.stack)
         for a, b in (("topAnchor", "topAnchor"), ("bottomAnchor", "bottomAnchor"),
                      ("leadingAnchor", "leadingAnchor"), ("trailingAnchor", "trailingAnchor")):
-            getattr(self.stack, a)().constraintEqualToAnchor_(getattr(root, b)()).setActive_(True)
-
-        icon = NSImage.imageWithSystemSymbolName_accessibilityDescription_("xmark.circle.fill", "Dismiss")
-        close = NSButton.buttonWithImage_target_action_(icon, root, "dismiss:")
-        close.setBordered_(False)
-        close.setContentTintColor_(NSColor.secondaryLabelColor())
-        close.setTranslatesAutoresizingMaskIntoConstraints_(False)
-        close.setHidden_(True)
-        root.addSubview_(close)
-        close.topAnchor().constraintEqualToAnchor_constant_(root.topAnchor(), 9).setActive_(True)
-        close.trailingAnchor().constraintEqualToAnchor_constant_(root.trailingAnchor(), -10).setActive_(True)
-        self.close, self.root = close, root
+            getattr(self.stack, a)().constraintEqualToAnchor_(getattr(content, b)()).setActive_(True)
 
         glass_cls = objc.lookUpClass("NSGlassEffectView") if _has("NSGlassEffectView") else None
+        glass = self._glass(glass_cls, WIDTH, 60, 18)
+        if glass_cls is not None:
+            glass.setContentView_(content)
+        else:
+            glass.addSubview_(content)
+
+        root = _Root.alloc().initWithOwner_(self)
+        root.addSubview_(glass)
+
+        # The close button: a small glass circle with an xmark, hidden until the pointer is over the card.
+        close = self._glass(glass_cls, CLOSE, CLOSE, CLOSE / 2)
+        config = NSImageSymbolConfiguration.configurationWithPointSize_weight_(8, 0.4)
+        icon = NSImage.imageWithSystemSymbolName_accessibilityDescription_("xmark", "Dismiss")
+        button = NSButton.buttonWithImage_target_action_(icon.imageWithSymbolConfiguration_(config), root, "dismiss:")
+        button.setBordered_(False)
+        button.setContentTintColor_(NSColor.secondaryLabelColor())
+        button.setFrame_(NSMakeRect(0, 0, CLOSE, CLOSE))
+        if glass_cls is not None:
+            close.setContentView_(button)
+        else:
+            close.addSubview_(button)
+        close.setHidden_(True)
+        root.addSubview_(close)
+
+        self.close, self.root, self.glass, self.panel = close, root, glass, panel
+        panel.setContentView_(root)
+
+    @staticmethod
+    def _glass(glass_cls, w: float, h: float, radius: float):
         if glass_cls is not None:  # Liquid Glass, macOS 26+
-            glass = glass_cls.alloc().initWithFrame_(NSMakeRect(0, 0, WIDTH, 60))
-            glass.setCornerRadius_(18)
-            glass.setContentView_(root)
-        else:  # frosted blur on older macOS
-            glass = NSVisualEffectView.alloc().initWithFrame_(NSMakeRect(0, 0, WIDTH, 60))
-            glass.setMaterial_(HUD_MATERIAL)
-            glass.setBlendingMode_(BEHIND_WINDOW)
-            glass.setState_(ACTIVE)
-            glass.setWantsLayer_(True)
-            glass.layer().setCornerRadius_(18)
-            glass.layer().setMasksToBounds_(True)
-            glass.addSubview_(root)
-        self.glass, self.panel = glass, panel
-        panel.setContentView_(glass)
+            v = glass_cls.alloc().initWithFrame_(NSMakeRect(0, 0, w, h))
+            v.setCornerRadius_(radius)
+            return v
+        v = NSVisualEffectView.alloc().initWithFrame_(NSMakeRect(0, 0, w, h))  # frosted blur before 26
+        v.setMaterial_(HUD_MATERIAL)
+        v.setBlendingMode_(BEHIND_WINDOW)
+        v.setState_(ACTIVE)
+        v.setWantsLayer_(True)
+        v.layer().setCornerRadius_(radius)
+        v.layer().setMasksToBounds_(True)
+        return v
 
     def _hover(self, inside: bool) -> None:
         self._hovering = inside  # also pauses the countdown, so you can read without racing it
@@ -237,10 +257,14 @@ class Overlay(View):
         self.stack.layoutSubtreeIfNeeded()
         h = self.stack.fittingSize().height
         screen = NSScreen.mainScreen().visibleFrame()
-        x = screen.origin.x + screen.size.width - WIDTH - MARGIN
-        y = screen.origin.y + screen.size.height - h - MARGIN
-        self.panel.setFrame_display_(NSMakeRect(x, y, WIDTH, h), True)
-        self.glass.setFrame_(NSMakeRect(0, 0, WIDTH, h))
+        x = screen.origin.x + screen.size.width - WIDTH - MARGIN - OVERHANG
+        y = screen.origin.y + screen.size.height - h - MARGIN - OVERHANG
+        self.panel.setFrame_display_(NSMakeRect(x, y, WIDTH + OVERHANG, h + OVERHANG), True)
+        self.root.setFrame_(NSMakeRect(0, 0, WIDTH + OVERHANG, h + OVERHANG))
+        self.glass.setFrame_(NSMakeRect(OVERHANG, 0, WIDTH, h))
+        # Centred just inside the card's top-left corner, so about half of it hangs outside.
+        c = OVERHANG + CLOSE_INSET
+        self.close.setFrame_(NSMakeRect(c - CLOSE / 2, h - CLOSE_INSET - CLOSE / 2, CLOSE, CLOSE))
         self.panel.setAlphaValue_(1.0)
         self.panel.orderFrontRegardless()
 
@@ -318,7 +342,6 @@ class Overlay(View):
         head = [_label(status, 13, 0.6, color), _spacer()]
         if card.total_s:
             head.append(_label(f"{card.total_s:.2f}s", 11, 0.0, NSColor.secondaryLabelColor(), mono=True))
-        head.append(_fixed(NSView.alloc().init(), 18, 1))  # room for the close button
         views = [_fixed(_row(*head), INNER), _label(f"“{card.transcript}”", 13, wrap=True)]
 
         self._toggles, self._rows = [], []
