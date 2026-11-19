@@ -8,7 +8,9 @@ Speech stays on your Mac ([faster-whisper](https://github.com/SYSTRAN/faster-whi
 
 > **Unofficial project.** voicecom-jev is a personal project. It is not affiliated with, endorsed by, or supported by TypeSafe AI.
 
-<p align="center"><img src="docs/img/overlay-chain.png" width="420" alt="The overlay after a three-step command: Ran, the transcript, and each step with how sure Jev is"></p>
+https://github.com/user-attachments/assets/a8ca8628-41ec-4a4a-80b7-dbedf7078290
+
+*Real use with a real voice: snapping a layout, searching, clicking a link, taking notes, an unsure command, and unticking a risky step, all without touching the keyboard. Sound on.*
 
 ## What it does
 
@@ -18,13 +20,11 @@ Speech stays on your Mac ([faster-whisper](https://github.com/SYSTRAN/faster-whi
 - **Ignores filler.** "Um…" or a cough does nothing.
 - **Clicks buttons by name.** "Click Submit" finds the button in the front window's accessibility tree.
 
-| Listening | Risky: needs your OK | Unsure: needs your OK |
-| - | - | - |
-| <img src="docs/img/overlay-listening.png" width="260" alt="Listening, with a level meter"> | <img src="docs/img/overlay-confirm.png" width="260" alt="Scroll down then close this tab: close tab in red, Run and Cancel buttons"> | <img src="docs/img/overlay-unsure.png" width="260" alt="Make the window wider: maximize window, Unsure, Run and Cancel"> |
-
-![Terminal demo](demo/demo.gif)
-
-*Terminal capture of real Jev decisions in `--dry-run --text` mode ([mp4](demo/demo.mp4); regenerate with `vhs demo/demo.tape`). In normal use you hold Right Option and speak.*
+| Three commands in one sentence | Listening |
+| - | - |
+| <img src="docs/img/overlay-chain.png" width="380" alt="The overlay after a three-step command: Ran, the transcript, and each step with how sure Jev is"> | <img src="docs/img/overlay-listening.png" width="380" alt="Listening, with a level meter"> |
+| **Risky: needs your OK** | **Unsure: needs your OK** |
+| <img src="docs/img/overlay-confirm.png" width="380" alt="Scroll down then close this tab: close tab in red, Run and Cancel buttons"> | <img src="docs/img/overlay-unsure.png" width="380" alt="Make the window wider: maximize window, Unsure, Run and Cancel"> |
 
 ## Why Jev
 
@@ -83,7 +83,7 @@ flowchart TD
 
 For a sentence with several steps, the whole thing is gated once. If any step is risky or unsure, you get one question with a checkbox per step and the risky steps in red. A question lasts 10 seconds (hovering pauses it), and saying something new drops it. Clicks also need Jev to be at least 70% sure of the element to run without asking. Tune the thresholds with `--act` and `--ignore`, or in `voicecom/engine.py:Thresholds`.
 
-Every command also prints one log line. These are from real runs:
+Every command also prints one log line ([terminal capture](demo/demo.gif) of `--dry-run --text` mode). These are from real runs:
 
 ```
 "Open Safari." -> open_app p=1.00 conf=1.00 destr=0.03 app=Safari(1.00) | stt=0.21s jev=0.15s total=0.37s | WOULD RUN: open Safari
