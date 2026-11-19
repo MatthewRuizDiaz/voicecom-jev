@@ -12,9 +12,9 @@ import ApplicationServices as AX
 import Quartz
 from AppKit import NSURL, NSApplication, NSDate, NSRunLoop, NSScreen, NSWorkspace
 
-NS_ACCESSORY = 1  # NSApplicationActivationPolicyAccessory: no Dock icon, may still show panels
-
 from .base import Automation, Element
+
+NS_ACCESSORY = 1  # NSApplicationActivationPolicyAccessory: no Dock icon, may still show panels
 
 # US-layout virtual key codes.
 KEYCODES = {
@@ -240,7 +240,8 @@ class MacAutomation(Automation):
         _osascript("set volume output muted not (output muted of (get volume settings))")
 
     def search_url(self, query: str) -> str:
-        out = subprocess.run(["defaults", "read", "-g", "NSPreferredWebServices"], capture_output=True, text=True).stdout
+        defaults = ["defaults", "read", "-g", "NSPreferredWebServices"]
+        out = subprocess.run(defaults, capture_output=True, text=True).stdout
         for provider, template in SEARCH_URLS.items():
             if f'"{provider}"' in out or f"= {provider};" in out:
                 return template.format(quote_plus(query))

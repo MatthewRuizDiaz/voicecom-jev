@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "voicecom-jev"
+version = "0.1.0"
+description = "Hold a key, say a command, and your Mac does it. Decisions by TypeSafe's Jev, actions by plain code."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Matthew Ruiz Diaz" }]
+requires-python = ">=3.10"
+dependencies = [
+    "typesafe-sdk>=0.7",
+    "faster-whisper>=1.1",
+    "sounddevice>=0.5",
+    "numpy",
+    "pynput>=1.8",
+    "pyobjc-core; sys_platform == 'darwin'",
+    "pyobjc-framework-Cocoa; sys_platform == 'darwin'",
+    "pyobjc-framework-Quartz; sys_platform == 'darwin'",
+    "pyobjc-framework-ApplicationServices; sys_platform == 'darwin'",
+    "pyobjc-framework-AVFoundation; sys_platform == 'darwin'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+voicecom = "voicecom.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["voicecom*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -111,7 +111,8 @@ def _single_instance() -> object:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         lock.seek(0)
-        sys.exit(f"voicecom is already running (pid {lock.read().strip() or '?'}). Stop it first with Ctrl+C in its window.")
+        pid = lock.read().strip() or "?"
+        sys.exit(f"voicecom is already running (pid {pid}). Stop it first with Ctrl+C in its window.")
     lock.truncate(0)
     lock.write(str(os.getpid()))
     lock.flush()

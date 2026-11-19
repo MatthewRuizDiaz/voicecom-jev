@@ -84,7 +84,7 @@ class Automation(ABC):
         from urllib.parse import quote_plus
         return f"https://www.google.com/search?q={quote_plus(query)}"
 
-    def say(self, text: str) -> None:  # optional spoken feedback
+    def say(self, text: str) -> None:  # noqa: B027  (optional spoken feedback; silent unless a platform speaks)
         pass
 
 

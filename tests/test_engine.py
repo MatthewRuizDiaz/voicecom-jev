@@ -29,7 +29,8 @@ class StubJev:
 
     def __init__(self, command, p, destructive=0.0, app=None, element=("Submit", 0.95),
                  meaningful=0.99, app_p=None, spans=None):
-        self.d = Decision(command, p, p, destructive, meaningful, app, app_p if app_p is not None else (0.9 if app else 0.0), 0.1)
+        app_p = app_p if app_p is not None else (0.9 if app else 0.0)
+        self.d = Decision(command, p, p, destructive, meaningful, app, app_p, 0.1)
         self.element, self.spans = element, spans or {}
         self.asked: list[str] = []
 
@@ -127,7 +128,8 @@ def test_pieces_split_on_spoken_boundaries():
     def texts(t): return [t[a:b] for a, b in chain.pieces(t)]
     assert texts("open Safari and search for tacos") == ["open Safari", "search for tacos"]
     assert texts("Open Safari. Then search for tacos.") == ["Open Safari", "search for tacos."]
-    assert texts("snap this left, open Notes and then snap it right") == ["snap this left", "open Notes", "snap it right"]
+    three = ["snap this left", "open Notes", "snap it right"]
+    assert texts("snap this left, open Notes and then snap it right") == three
     assert chain.spans("scroll down") == []
 
 
@@ -150,7 +152,8 @@ def test_and_inside_one_command_is_not_split():
 
 
 def test_split_keeps_a_multi_word_tail_together():
-    jev = StubJev("web_search", 0.5, spans={**SAFARI_TACOS, "search for tacos and pizza": ("web_search", 0.97, 0.0, None)})
+    spans = {**SAFARI_TACOS, "search for tacos and pizza": ("web_search", 0.97, 0.0, None)}
+    jev = StubJev("web_search", 0.5, spans=spans)
     auto, _ = run("open Safari and search for tacos and pizza", jev)
     assert [c[0] for c in auto.calls] == ["open_app", "open_url"] and "pizza" in auto.calls[1][1][0]
 

@@ -67,7 +67,7 @@ def best_split(found: list[Span], decisions: list, act: float, dictate: str = "d
     if not found:
         return None
     n = max(s.last for s in found) + 1
-    ok = {(s.first, s.last): (s, d) for s, d in zip(found, decisions)
+    ok = {(s.first, s.last): (s, d) for s, d in zip(found, decisions, strict=True)
           if d.command != dictate and d.p >= act and (d.command not in takes_rest or s.last == n - 1)}
     # best[(k, steps)] = (log-probability, chosen spans) covering pieces[:k] in that many steps
     best: dict[tuple[int, int], tuple[float, list]] = {(0, 0): (0.0, [])}

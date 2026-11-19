@@ -7,7 +7,8 @@ import re
 _UNITS = {w: i for i, w in enumerate(
     "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
     "fifteen sixteen seventeen eighteen nineteen".split())}
-_TENS = {w: 10 * i for i, w in enumerate("_ _ twenty thirty forty fifty sixty seventy eighty ninety".split()) if w != "_"}
+_TENS = {w: 10 * i for i, w in enumerate("_ _ twenty thirty forty fifty sixty seventy eighty ninety".split())
+         if w != "_"}
 
 
 def clean(transcript: str) -> str:
@@ -79,7 +80,9 @@ def keys(text: str) -> list[str] | None:
     while i < len(tokens):
         two = " ".join(tokens[i:i + 2])
         if two in KEY_ALIASES:
-            out.append(KEY_ALIASES[two]); i += 2; continue
+            out.append(KEY_ALIASES[two])
+            i += 2
+            continue
         tok = tokens[i]
         if tok in KEY_ALIASES:
             out.append(KEY_ALIASES[tok])

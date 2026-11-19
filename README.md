@@ -1,5 +1,7 @@
 # voicecom-jev
 
+[![CI](https://github.com/MatthewRuizDiaz/voicecom-jev/actions/workflows/ci.yml/badge.svg)](https://github.com/MatthewRuizDiaz/voicecom-jev/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Hold a key, say a command like "open Chrome", "scroll down", "click Submit" or "snap this window left", and your Mac does it.
 
 Speech is transcribed locally with [faster-whisper](https://github.com/SYSTRAN/faster-whisper). Every decision (which command, whether it's destructive, which on-screen button you meant) is made by TypeSafe's **Jev** model, which returns typed answers with probabilities instead of generated text. The actions themselves are plain, deterministic code.
@@ -101,6 +103,8 @@ python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env   # then put your key in .env
 ```
 
+Or install the `voicecom` command with pipx (`brew install pipx` first): `pipx install git+https://github.com/MatthewRuizDiaz/voicecom-jev.git`. It reads `TYPESAFE_API_KEY` from the environment or from a `.env` in the folder you run it from.
+
 macOS grants permissions to the app you run voicecom from (Terminal, iTerm, Claude…), not to Python. Run the check once from that app:
 
 ```bash
@@ -141,7 +145,7 @@ voicecom/
     base.py          Automation interface + DryRun wrapper
     macos.py         AX API, Quartz events, osascript
     macos_permissions.py   the --check permission report
-tests/               gate and parser tests (Jev stubbed)
+tests/               gate, parser and Chain tests (Jev stubbed); CI runs them and ruff on every push
 ```
 
 The OS layer sits behind `platforms/base.py:Automation`. Only macOS is implemented; a Windows or Linux port means writing one class.

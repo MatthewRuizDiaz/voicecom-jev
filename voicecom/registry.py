@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .jev import Jev
@@ -15,8 +16,8 @@ class Ctx:
     """Everything a command needs to turn a transcript into an action."""
 
     transcript: str
-    auto: "Automation"
-    jev: "Jev"
+    auto: Automation
+    jev: Jev
     app: str | None = None  # app name Jev picked in the same request, if any
     app_p: float = 0.0
     apps: list[str] = field(default_factory=list)  # installed app names

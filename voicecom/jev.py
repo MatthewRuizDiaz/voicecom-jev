@@ -31,13 +31,15 @@ class Decision:
     app: str | None
     app_p: float
     latency: float
-    spans: list["Decision"] = field(default_factory=list)  # one per candidate Span, same order
+    spans: list[Decision] = field(default_factory=list)  # one per candidate Span, same order
 
 
 def _api_key() -> str | None:
     key = os.environ.get("TYPESAFE_API_KEY")
-    env_file = Path(__file__).resolve().parent.parent / ".env"
-    if not key and env_file.exists():  # a gitignored .env in the project root
+    # A gitignored .env in the project root, or in the folder you run from (for a pipx install).
+    for env_file in (Path(__file__).resolve().parent.parent / ".env", Path.cwd() / ".env"):
+        if key or not env_file.exists():
+            continue
         for line in env_file.read_text().splitlines():
             name, _, value = line.partition("=")
             if name.strip().removeprefix("export ").strip() == "TYPESAFE_API_KEY":
@@ -53,7 +55,8 @@ class Jev:
     def __init__(self, model: str = "jev-latest"):
         key = _api_key()
         if not key or key == "your-typesafe-api-key":
-            raise SystemExit("TYPESAFE_API_KEY is not set (or is still the .env placeholder). Get a key at https://console.typesafe.ai/keys "
+            raise SystemExit("TYPESAFE_API_KEY is not set (or is still the .env placeholder). "
+                             "Get a key at https://console.typesafe.ai/keys "
                              "and put it in .env or run: export TYPESAFE_API_KEY=...")
         self.client = TypeSafeClient(api_key=key, model=model, timeout=15)
 

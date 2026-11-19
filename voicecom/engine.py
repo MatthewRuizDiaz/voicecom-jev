@@ -5,9 +5,9 @@ from __future__ import annotations
 import re
 import threading
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Callable
 
 from . import chain, commands  # noqa: F401  (commands registers the commands)
 from .jev import Jev
@@ -144,7 +144,7 @@ class Engine:
                                      risky=sd.destructive >= self.t.destructive) for text, sd, p in planned]
 
         def make(sel: list[bool]) -> Plan | None:
-            chosen = [step for step, on in zip(planned, sel) if on]
+            chosen = [step for step, on in zip(planned, sel, strict=True) if on]
             if not chosen:
                 return None
             names = ", then ".join(p.summary if p else f"click ({text})" for text, _, p in chosen)
@@ -157,7 +157,7 @@ class Engine:
         self._run(make([True] * len(planned)), head, stt_s, d.latency, start)
 
     def _run_steps(self, planned) -> None:
-        for i, (text, sd, plan) in enumerate(planned):
+        for i, (text, _, plan) in enumerate(planned):
             if i:
                 self._settle(planned[i - 1][2])
             if plan is None:  # a click after earlier steps: read the screen now
@@ -197,7 +197,7 @@ class Engine:
         start = time.perf_counter()
         sel = list(selected) if selected is not None else [True] * len(p.steps)
         self._card = Card(p.transcript, [StepView(s.label, s.p, dim=not on, risky=s.risky)
-                                         for s, on in zip(p.steps, sel)])
+                                         for s, on in zip(p.steps, sel, strict=True)])
         head = f'"{p.transcript}" -> confirmed {sum(sel)} of {len(sel)} step{"s" * (len(sel) != 1)}'
         plan = p.make(sel)
         if plan is None:

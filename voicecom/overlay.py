@@ -7,19 +7,34 @@ clicks, so actions still land in the app you were using.
 
 from __future__ import annotations
 
+import math
 import os
 import signal
 import sys
-import math
 import threading
 import warnings
-from typing import Callable
+from collections.abc import Callable
 
 import objc
-from AppKit import (NSApplication, NSBackingStoreBuffered, NSButton, NSColor, NSFont, NSImage,
-                    NSImageSymbolConfiguration, NSLineBreakByTruncatingTail, NSMakeRect, NSPanel,
-                    NSProgressIndicator, NSScreen, NSStackView, NSTextField, NSTrackingArea, NSView,
-                    NSVisualEffectView)
+from AppKit import (
+    NSApplication,
+    NSBackingStoreBuffered,
+    NSButton,
+    NSColor,
+    NSFont,
+    NSImage,
+    NSImageSymbolConfiguration,
+    NSLineBreakByTruncatingTail,
+    NSMakeRect,
+    NSPanel,
+    NSProgressIndicator,
+    NSScreen,
+    NSStackView,
+    NSTextField,
+    NSTrackingArea,
+    NSView,
+    NSVisualEffectView,
+)
 from PyObjCTools import AppHelper
 
 from .view import Card, View

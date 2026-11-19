@@ -161,7 +161,8 @@ def web_search(ctx: Ctx):
 
 # ---------------------------------------------------------------- notes
 NOTE_LEADS = ("open the notes app and type", "open the notes app and write", "open notes and type",
-              "open notes and write", "go to notes and type", "open a new note and type", "open a new note and write", "make a new note saying",
+              "open notes and write", "go to notes and type", "open a new note and type", "open a new note and write",
+              "make a new note saying",
               "make a note saying", "create a new note saying", "create a note saying", "new note saying",
               "make a new note", "create a new note", "open a new note", "start a new note", "make a note",
               "create a note", "write a note", "take a note", "jot down", "new note", "note that", "note")
