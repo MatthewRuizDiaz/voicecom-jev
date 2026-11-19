@@ -38,7 +38,7 @@ A voice command tool has to make many small, high-stakes judgments fast: which c
 ## How it works
 
 ```mermaid
-flowchart LR
+flowchart TD
     K["Hold Right Option"] --> W["faster-whisper<br/>(local)"]
     W --> S["Code proposes split points<br/>(and, then, commas)"]
     S --> J{{"One Jev request"}}
