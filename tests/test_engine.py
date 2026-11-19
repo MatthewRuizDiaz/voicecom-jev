@@ -276,3 +276,21 @@ def test_confirm_card_carries_run_and_cancel():
     assert card.outcome == "confirm" and card.on_run and card.on_cancel and card.steps[0].risky
     card.on_cancel()
     assert view.cards[-1].outcome == "cancelled"
+
+
+# ---------------------------------------------------------------- click outcomes (issue #15)
+def test_click_miss_is_ignored_and_names_the_app():
+    view = RecordingView()
+    auto = StubAuto()
+    eng = Engine(auto, StubJev("click", 0.99, element=("Add Friend", 0.99)), speak=False, view=view)
+    eng.handle("Click Add Friend.")
+    card = view.cards[-1]
+    assert auto.calls == [] and card.outcome == "ignored"
+    assert card.steps[0].label == 'no "Add Friend" in Google Chrome\'s window'
+
+
+def test_click_names_the_app_it_clicked_in():
+    view = RecordingView()
+    eng = Engine(StubAuto(), StubJev("click", 0.95, element=("Submit", 0.92)), speak=False, view=view)
+    eng.handle("click the submit button")
+    assert view.cards[-1].outcome == "ran" and view.cards[-1].steps[0].label == "click Button 'Submit' in Google Chrome"

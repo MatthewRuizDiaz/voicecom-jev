@@ -53,13 +53,18 @@ def quit_app(ctx: Ctx):
 @command("click", "Click, press, or select a button, link, tab, or menu item on screen by its label. "
          "E.g. 'click Submit', 'press the Sign in button', 'select Settings'.")
 def click(ctx: Ctx):
+    # Clicks search the active app's focused window, not whatever is under the pointer, so every
+    # outcome names that app: a miss in the wrong app is then obvious (issue #15).
+    app = ctx.auto.frontmost_app()
+    target = parse.after(ctx.transcript, "click on", "click", "press", "tap", "select", "hit", "choose", "push")
+    target = re.sub(r"^the\s+|\s+(button|link|tab)$", "", target, flags=re.I) or "that"
     elements = ctx.elements if ctx.elements is not None else ctx.auto.clickable_elements()
-    if not elements:
-        return Plan("click: no labeled elements found in the front window", lambda: None, p=0.0)
-    el, p = ctx.jev.pick_element(ctx.transcript, elements, ctx.auto.frontmost_app())
+    if not elements:  # p=0 sends both misses to the gate's Ignore
+        return Plan(f"no labeled buttons in {app}'s window", lambda: None, p=0.0)
+    el, p = ctx.jev.pick_element(ctx.transcript, elements, app)
     if el is None:
-        return Plan("click: nothing on screen matches", lambda: None, p=p)
-    return Plan(f"click {el.role} '{el.label}'", lambda: ctx.auto.click(el), p=p,
+        return Plan(f'no "{target}" in {app}\'s window', lambda: None, p=0.0, extra={"none_of_these": p})
+    return Plan(f"click {el.role} '{el.label}' in {app}", lambda: ctx.auto.click(el), p=p,
                 extra={"elements": len(elements)})
 
 
