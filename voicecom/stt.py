@@ -14,29 +14,43 @@ PROMPT = ("Open Chrome. Switch to Slack. Click Submit. Scroll down. Snap window 
 
 
 class Recorder:
+    """Push-to-talk audio from one input stream that stays open for the whole session (issue #26).
+
+    Stopping a PortAudio stream right after use can deadlock inside CoreAudio (a lock-order clash
+    between AudioOutputUnitStop and the IO thread's start/stop callback), which froze voicecom on
+    "Thinking". So the stream is opened once, and start()/stop() only switch whether blocks are kept.
+    It also means the first syllable is never lost to stream start-up. macOS shows the microphone
+    indicator while voicecom runs; audio is kept only while the key is held and never leaves the Mac.
+    """
+
     def __init__(self):
         self._chunks: list[np.ndarray] = []
         self._lock = threading.Lock()
+        self._keeping = False
         self._stream: sd.InputStream | None = None
         self.level = 0.0  # loudness of the latest audio block (RMS), for the overlay's meter
 
+    def open(self) -> None:
+        if self._stream is None:
+            self._stream = sd.InputStream(samplerate=RATE, channels=1, dtype="float32", callback=self._cb)
+            self._stream.start()
+
     def start(self) -> None:
+        self.open()
         with self._lock:
             self._chunks = []
-        self._stream = sd.InputStream(samplerate=RATE, channels=1, dtype="float32", callback=self._cb)
-        self._stream.start()
+            self._keeping = True
 
     def _cb(self, data, frames, time_info, status):
+        block = data[:, 0]
+        self.level = float(np.sqrt(np.mean(block ** 2)))
         with self._lock:
-            self._chunks.append(data[:, 0].copy())
-        self.level = float(np.sqrt(np.mean(data[:, 0] ** 2)))
+            if self._keeping:
+                self._chunks.append(block.copy())
 
     def stop(self) -> np.ndarray:
-        if self._stream is not None:
-            self._stream.stop()
-            self._stream.close()
-            self._stream = None
         with self._lock:
+            self._keeping = False
             return np.concatenate(self._chunks) if self._chunks else np.zeros(0, dtype=np.float32)
 
 

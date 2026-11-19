@@ -156,6 +156,8 @@ The first run downloads the Whisper model (`base.en`, about 140 MB).
 .venv/bin/python -m voicecom --repl          # type commands at a prompt
 ```
 
+The microphone stays open while voicecom runs, so macOS shows its orange microphone indicator the whole time. Audio is kept only while you hold the key, and it never leaves your Mac. (Opening and closing the mic on every key press could freeze macOS's audio system; see #26.)
+
 Other options: `--hotkey {alt_r,cmd_r,ctrl_r,f13,f18,alt}`, `--whisper-model small.en` for better accuracy, `--no-overlay` for the terminal log only, and `--speak` to also ask confirmations out loud.
 
 ## Project layout

@@ -136,6 +136,7 @@ def listen(engine: Engine, args, view: View) -> None:
     print(f"Loading speech model ({args.whisper_model})...", flush=True)
     stt = Transcriber(args.whisper_model)
     rec = Recorder()
+    rec.open()  # one stream for the whole session; see Recorder
     target = getattr(keyboard.Key, args.hotkey)
     audio_q: queue.Queue = queue.Queue()
     held = {"down": False, "screen": None}
