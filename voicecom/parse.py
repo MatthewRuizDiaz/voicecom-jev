@@ -112,3 +112,22 @@ def scroll_amount(text: str) -> int:
     if any(w in t for w in ("little", "bit", "slightly")):
         return 2
     return 5
+
+
+def screen_vocabulary(labels: list[str], max_chars: int = 600) -> str:
+    """On-screen labels as a hint for Whisper, so "Expedia" beats a sound-alike (issue #24).
+
+    Unique, short labels in screen order, cut at a label boundary to stay well inside Whisper's
+    224-token prompt (it keeps the end, where these go).
+    """
+    seen, out, used = set(), [], 0
+    for label in labels:
+        label = " ".join(label.split())
+        if not label or len(label) > 40 or label.lower() in seen:
+            continue
+        if used + len(label) + 2 > max_chars:
+            break
+        seen.add(label.lower())
+        out.append(label)
+        used += len(label) + 2
+    return ", ".join(out)

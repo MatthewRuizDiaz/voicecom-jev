@@ -294,3 +294,11 @@ def test_click_names_the_app_it_clicked_in():
     eng = Engine(StubAuto(), StubJev("click", 0.95, element=("Submit", 0.92)), speak=False, view=view)
     eng.handle("click the submit button")
     assert view.cards[-1].outcome == "ran" and view.cards[-1].steps[0].label == "click Button 'Submit' in Google Chrome"
+
+
+# ---------------------------------------------------------------- on-screen words for Whisper (issue #24)
+def test_screen_vocabulary_dedupes_and_caps():
+    labels = ["Expedia", "expedia", "  Kayak  ", "", "x" * 80, "Google Flights"] + [f"Link {i}" for i in range(200)]
+    vocab = parse.screen_vocabulary(labels, max_chars=60)
+    assert vocab.startswith("Expedia, Kayak, Google Flights, Link 0")
+    assert len(vocab) <= 60 and "expedia" not in vocab and "xxxx" not in vocab

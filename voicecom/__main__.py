@@ -15,6 +15,7 @@ import queue
 import sys
 import time
 
+from . import parse
 from .engine import Engine, Thresholds
 from .jev import Jev
 from .platforms import DryRun, check_permissions, get_automation
@@ -137,11 +138,13 @@ def listen(engine: Engine, args, view: View) -> None:
     rec = Recorder()
     target = getattr(keyboard.Key, args.hotkey)
     audio_q: queue.Queue = queue.Queue()
-    held = {"down": False}
+    held = {"down": False, "screen": None}
 
     def on_press(key):
         if key == target and not held["down"]:
             held["down"] = True
+            # Read the front window's labels while you speak, as hints for Whisper (issue #24).
+            held["screen"] = engine.pool.submit(engine.auto.clickable_elements)
             rec.start()
             view.listening(lambda: rec.level)
             print("  ● listening...", end="\r", flush=True)
@@ -150,16 +153,20 @@ def listen(engine: Engine, args, view: View) -> None:
         if key == target and held["down"]:
             held["down"] = False
             view.thinking()
-            audio_q.put(rec.stop())
+            audio_q.put((rec.stop(), held["screen"]))
 
     listener = keyboard.Listener(on_press=on_press, on_release=on_release)
     listener.start()
     print(f"Ready. Hold {HOTKEYS[args.hotkey]}, speak, release. Ctrl+C to quit.", flush=True)
     try:
         while True:
-            audio = audio_q.get()
+            audio, screen = audio_q.get()
             t = time.perf_counter()
-            text = stt(audio)
+            try:
+                labels = [e.label for e in screen.result(timeout=2.5)] if screen else []
+            except Exception:  # no permission, or the app didn't answer: transcribe without hints
+                labels = []
+            text = stt(audio, parse.screen_vocabulary(labels))
             stt_s = time.perf_counter() - t
             print(" " * 20, end="\r")
             if not text:

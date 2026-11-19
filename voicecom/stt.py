@@ -47,9 +47,11 @@ class Transcriber:
         self.model = WhisperModel(model, device="cpu", compute_type="int8")
         self.model.transcribe(np.zeros(RATE // 2, dtype=np.float32))  # warm up
 
-    def __call__(self, audio: np.ndarray) -> str:
+    def __call__(self, audio: np.ndarray, on_screen: str = "") -> str:
+        """on_screen: labels from the front window (parse.screen_vocabulary), to bias toward real names."""
         if len(audio) < RATE * 0.25:  # under a quarter second: a stray tap
             return ""
+        prompt = f"{PROMPT} On screen: {on_screen}." if on_screen else PROMPT
         segments, _ = self.model.transcribe(audio, language="en", beam_size=1,
-                                            initial_prompt=PROMPT, vad_filter=True)
+                                            initial_prompt=prompt, vad_filter=True)
         return " ".join(s.text.strip() for s in segments).strip()
