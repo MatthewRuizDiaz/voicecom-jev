@@ -10,8 +10,8 @@ jobs:
     # Gate logic, parsing and Chain splitting run anywhere: Jev and the OS are stubbed out.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install "typesafe-sdk>=0.7" pytest ruff
@@ -22,8 +22,8 @@ jobs:
     # The real install, pyobjc included, and the console command it provides.
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: brew install portaudio
