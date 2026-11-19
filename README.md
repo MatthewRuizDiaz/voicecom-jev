@@ -2,69 +2,101 @@
 
 [![CI](https://github.com/MatthewRuizDiaz/voicecom-jev/actions/workflows/ci.yml/badge.svg)](https://github.com/MatthewRuizDiaz/voicecom-jev/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Hold a key, say a command like "open Chrome", "scroll down", "click Submit" or "snap this window left", and your Mac does it.
+**Hold a key, say what you want, and your Mac does it, several commands at a time.** "Snap this window left, open Notes and snap it right" takes about a second, from letting go of the key to done.
 
-Speech is transcribed locally with [faster-whisper](https://github.com/SYSTRAN/faster-whisper). Every decision (which command, whether it's destructive, which on-screen button you meant) is made by TypeSafe's **Jev** model, which returns typed answers with probabilities instead of generated text. The actions themselves are plain, deterministic code.
+Speech stays on your Mac ([faster-whisper](https://github.com/SYSTRAN/faster-whisper)). Every decision (which command, where one command ends and the next begins, whether it could lose work, which button you meant) is a typed question to TypeSafe's **Jev** model, which answers with probabilities instead of generated text. The actions themselves are plain, deterministic code.
 
 > **Unofficial project.** voicecom-jev is a personal project. It is not affiliated with, endorsed by, or supported by TypeSafe AI.
 
-![demo](demo/demo.gif)
+<p align="center"><img src="docs/img/overlay-chain.png" width="420" alt="The overlay after a three-step command: Ran, the transcript, and each step with how sure Jev is"></p>
 
-*Terminal capture of real Jev decisions in `--dry-run --text` mode ([mp4](demo/demo.mp4); regenerate with `vhs demo/demo.tape`). In normal use you hold Right Option and speak instead of typing.*
+## What it does
+
+- **Several commands in one sentence.** "Open Safari and search for tacos" runs two steps in order. "Type salt and pepper" stays one.
+- **Shows its work.** A glass panel in the corner shows what it heard, each step, and how sure Jev is. It never takes focus, and it fades on its own.
+- **Asks before anything risky or unclear.** You can untick the steps you don't want, then click Run.
+- **Ignores filler.** "Um…" or a cough does nothing.
+- **Clicks buttons by name.** "Click Submit" finds the button in the front window's accessibility tree.
+
+| Listening | Risky: needs your OK | Unsure: needs your OK |
+| - | - | - |
+| <img src="docs/img/overlay-listening.png" width="260" alt="Listening, with a level meter"> | <img src="docs/img/overlay-confirm.png" width="260" alt="Scroll down then close this tab: close tab in red, Run and Cancel buttons"> | <img src="docs/img/overlay-unsure.png" width="260" alt="Make the window wider: maximize window, Unsure, Run and Cancel"> |
+
+![Terminal demo](demo/demo.gif)
+
+*Terminal capture of real Jev decisions in `--dry-run --text` mode ([mp4](demo/demo.mp4); regenerate with `vhs demo/demo.tape`). In normal use you hold Right Option and speak.*
+
+## Why Jev
+
+A voice command tool has to make many small, high-stakes judgments fast: which command, is this one command or three, would it destroy something, was that even speech. Jev is built for exactly that kind of judgment.
+
+- **Answers are always one of your options.** Jev never invents a command or returns malformed JSON. A Choice question returns one of the options you gave it, with a probability for each.
+- **The probabilities are usable as-is.** Every gate in voicecom is a plain threshold on them: run at 80%, ask between 40% and 80%, ignore below.
+- **Many questions in one request.** One request asks the command for the whole sentence and for every candidate part of it, whether it's destructive, whether it's filler, and which app it names. Measured: 1 question set in 0.10s, 15 in 0.16s.
+- **Cheap.** $0.042 per million input tokens, so asking twenty extra questions per sentence costs nothing worth counting.
 
 ## How it works
 
-```
-hold Right Option ──► record mic ──► faster-whisper (local) ──► transcript
-                                                                    │
-            ┌───────────────────── one Jev request ─────────────────┤
-            │  Choice  "command":     which of 19 commands?         │
-            │  Noul    "destructive": would this lose work?         │
-            │  Noul    "meaningful":  real speech, or "uh"/"hmm"?   │
-            │  Choice  "app":         which installed app is named? │  (speculative)
-            └───────────────────────────────────────────────────────┘
-                                    │
-          confidence gate ──► run │ ask "Confirm: …?" │ ignore
-                                    │
- "click X" only: read the front window's accessibility tree ──► second Jev Choice over its labeled elements
-                                    │
-                    plain code: parse numbers, keys, text ──► macOS action
+```mermaid
+flowchart LR
+    K["Hold Right Option"] --> W["faster-whisper<br/>(local)"]
+    W --> S["Code proposes split points<br/>(and, then, commas)"]
+    S --> J{{"One Jev request"}}
+    J --> G{"Gate"}
+    G -- "sure" --> R["Run the steps in order"]
+    G -- "unsure or risky" --> O["Overlay: Run / Cancel"]
+    G -- "filler or too unsure" --> I["Ignore"]
+    O -- "Run" --> R
+    R --> P["Plain code parses numbers,<br/>keys and text"]
+    P --> M["macOS: accessibility API,<br/>keyboard and mouse events"]
 ```
 
-Each command prints one log line: transcript, chosen command, its probability and confidence, the destructive Noul, latency, and outcome. These are from a real run, speech synthesized with macOS `say` and fed through Whisper:
+The one Jev request carries:
+
+| Question | Type | Asks |
+| - | - | - |
+| `command` | Choice | which of the 19 commands the sentence asks for (or `dictate`) |
+| `command_k` | Choice | the same, for each candidate part of the sentence |
+| `destructive`, `destructive_k` | Noul | would doing this close, quit, delete, send or discard something? |
+| `meaningful` | Noul | is this real speech, or just "uh", "hmm" or a cough? |
+| `app`, `app_k` | Choice | which installed app is named (read only when the command takes one) |
+
+A "click" makes one more request: voicecom reads the front window's accessibility tree and asks a second Choice over its labeled buttons, links, tabs and menu items, with a `none_of_these` option.
+
+### Splitting a sentence into steps
+
+Code cuts the sentence at every likely boundary, and every run of neighbouring pieces becomes a candidate part. Jev classifies them all in that one request, and voicecom picks the split with the most steps (up to 5) where every part is a confident command. "Type salt and pepper" stays whole because "pepper" on its own isn't a command. [ADR 0005](docs/adr/0005-split-chains-by-span-fan-out.md) has the details.
+
+### The gate
+
+```mermaid
+flowchart TD
+    U["What you said"] --> F{"Filler?"}
+    F -- "yes" --> X["Ignore"]
+    F -- "no" --> P{"How sure is Jev<br/>of the command?"}
+    P -- "below 40%" --> X
+    P -- "40% to 80%" --> A["Ask: Run / Cancel"]
+    P -- "80% or more" --> D{"Could it lose work?"}
+    D -- "50% or more" --> A
+    D -- "no" --> R["Run"]
+```
+
+For a sentence with several steps, the whole thing is gated once. If any step is risky or unsure, you get one question with a checkbox per step and the risky steps in red. A question lasts 10 seconds (hovering pauses it), and saying something new drops it. Clicks also need Jev to be at least 70% sure of the element to run without asking. Tune the thresholds with `--act` and `--ignore`, or in `voicecom/engine.py:Thresholds`.
+
+Every command also prints one log line. These are from real runs:
 
 ```
-14:46:38 "Open Safari." -> open_app p=1.00 conf=1.00 destr=0.03 app=Safari(1.00) | stt=0.21s jev=0.15s total=0.37s | WOULD RUN: open Safari
-14:46:38 "Snap this window to the right." -> snap_right p=1.00 conf=1.00 destr=0.03 | stt=0.23s jev=0.11s total=0.34s | WOULD RUN: snap window right
-14:46:37 "Close this tab." -> close_tab p=1.00 conf=1.00 destr=0.95 | stt=0.30s jev=0.13s total=0.43s | CONFIRM (destructive): close tab
-14:11:33 "Snap this window left, open Notes and then snap it right." -> chain snap_left(1.00) → open_app(1.00) → snap_right(0.93) destr=0.03 | stt=0.00s jev=0.14s total=0.15s | WOULD RUN: snap window left, then open Notes, then snap window right
+"Open Safari." -> open_app p=1.00 conf=1.00 destr=0.03 app=Safari(1.00) | stt=0.21s jev=0.15s total=0.37s | WOULD RUN: open Safari
+"Close this tab." -> close_tab p=1.00 conf=1.00 destr=0.95 | stt=0.30s jev=0.13s total=0.43s | CONFIRM (destructive): close tab
+"Snap this window left, open Notes and then snap it right." -> chain snap_left(1.00) → open_app(1.00) → snap_right(0.93) destr=0.03 | jev=0.14s | WOULD RUN: snap window left, then open Notes, then snap window right
+"Umm..." -> dictate p=1.00 conf=1.00 destr=0.05 meaningful=0.03 | stt=0.23s jev=0.10s total=0.32s | IGNORED (filler)
 ```
-
-### How Jev is used
-
-- **Choice for command selection.** The registry's names and descriptions become the options of one Choice question, including a `dictate` option for "not a command, just type what I said". The state is the transcript plus the name of the frontmost app.
-- **Noul for the destructive check.** In the same request, a Noul question asks whether carrying out the request would close, quit, delete, send or discard something. Its value is the probability of "yes".
-- **Choice for element selection.** For "click X", the app reads the foreground window's accessibility tree, lists the labeled buttons, links, tabs and menu items, and asks a second Choice question: which one the user means. A `none_of_these` option lets Jev say nothing matches.
-- **Noul for filler.** Another Noul in the same request asks whether the Utterance is real speech or just "uh", "hmm", or a cough. Below 0.30 it's ignored, so a stray key press never types noise.
-- **Speculative app Choice.** The first request also asks which installed app is named. That answer is only read when the command takes an app (`open_app`, `quit_app`), and it costs no extra round trip. If you name an app vaguely ("open my email"), Jev's leaning (Mail) is offered as a question ("open Mail?") rather than opening an app literally named "my email".
-- **Several commands in one sentence.** "Open Safari and search for tacos" is cut in code at every likely boundary, and the same request asks the command Choice for each candidate Span too. It splits only where every part is a confident command, so "type salt and pepper" stays whole. See [ADR 0005](docs/adr/0005-split-chains-by-span-fan-out.md).
-- **Confidence thresholds gate everything.** The gate reads the probability of the chosen option, as the TypeSafe docs recommend for Choice answers:
-
-  | Condition | Result |
-  | - | - |
-  | command p ≥ 0.80, destructive < 0.50 (and element p ≥ 0.70 for clicks) | run immediately |
-  | command p 0.40–0.80, or destructive ≥ 0.50, or element p 0.30–0.70 | ask to confirm: Run / Cancel on the overlay, one checkbox per step of a Chain, risky steps in red |
-  | command p < 0.40, or element p < 0.30 | ignore |
-
-  Tune them with `--act` and `--ignore`, or in `voicecom/engine.py:Thresholds`.
-
-Anything Jev doesn't extract is parsed in ordinary code (`voicecom/parse.py`): volume numbers ("twenty five percent"), key chords ("command shift T"), scroll amounts, search queries, and text to type.
 
 ## Commands
 
 | Command | Say something like |
 | - | - |
-| `open_app` | "open Chrome", "switch to Slack" |
+| `open_app` | "open Chrome", "switch to Slack", "open my email" (asks "open Mail?") |
 | `quit_app` | "quit Spotify" |
 | `click` | "click Submit", "press the Sign in button" |
 | `scroll_down` / `scroll_up` | "scroll down", "scroll up a little", "scroll down 10" |
@@ -76,11 +108,11 @@ Anything Jev doesn't extract is parsed in ordinary code (`voicecom/parse.py`): v
 | `set_volume` | "set volume to thirty percent" |
 | `mute` | "mute" |
 | `new_tab` / `close_tab` | "new tab", "close this tab" |
-| `new_note` | "new note call the dentist", "make a note saying buy milk", "open a new note and type …" |
-| `web_search` | "search for the best tacos in Austin" |
+| `new_note` | "new note call the dentist", "open Notes and type meeting at 3" |
+| `web_search` | "search for the best tacos in Austin" (uses your default search engine) |
 | `dictate` | anything that isn't a command gets typed as-is |
 
-`python -m voicecom --list` prints them with the descriptions Jev sees.
+Combine any of them with "and", "then" or a pause. `voicecom --list` prints them with the descriptions Jev sees.
 
 ### Adding a command
 
@@ -111,7 +143,7 @@ macOS grants permissions to the app you run voicecom from (Terminal, iTerm, Clau
 .venv/bin/python -m voicecom --check
 ```
 
-It reports **Microphone** (to record while the key is held), **Input Monitoring** (for the global push-to-talk key) and **Accessibility** (to click, type, scroll and move windows). It triggers the system prompt for any that are missing, names the app to turn on, and opens the right page in System Settings. After turning them on, quit and reopen that app and run the check again. `--check --no-prompt` only reports.
+It reports **Microphone** (to record while the key is held), **Input Monitoring** (for the push-to-talk key in any app) and **Accessibility** (to click, type, scroll and move windows). It shows the system prompt for any that are missing, names the app to turn on, and opens the right page in System Settings. After turning them on, quit and reopen that app and run the check again. `--check --no-prompt` only reports.
 
 The first run downloads the Whisper model (`base.en`, about 140 MB).
 
@@ -119,37 +151,37 @@ The first run downloads the Whisper model (`base.en`, about 140 MB).
 
 ```bash
 .venv/bin/python -m voicecom                 # hold Right Option, speak, release
-.venv/bin/python -m voicecom --dry-run       # decide and log, but don't touch anything
+.venv/bin/python -m voicecom --dry-run       # decide and show, but don't touch anything
 .venv/bin/python -m voicecom --text "open chrome" --text "scroll down"   # no mic
 .venv/bin/python -m voicecom --repl          # type commands at a prompt
 ```
 
-A glass panel in the top-right corner shows what it heard, each Step with Jev's probability, and the outcome. It never takes focus, and it fades after about 2 seconds. `--no-overlay` turns it off.
-
-Other options: `--hotkey {alt_r,cmd_r,ctrl_r,f13,f18,alt}`, `--whisper-model small.en` for better accuracy, and `--speak` to also ask confirmations out loud.
+Other options: `--hotkey {alt_r,cmd_r,ctrl_r,f13,f18,alt}`, `--whisper-model small.en` for better accuracy, `--no-overlay` for the terminal log only, and `--speak` to also ask confirmations out loud.
 
 ## Project layout
 
 ```
 voicecom/
-  __main__.py        CLI, push-to-talk loop
-  stt.py             mic recording + faster-whisper
-  jev.py             every TypeSafe call: decide(), pick_element()
-  engine.py          confidence gate, confirmations, one-line log
-  registry.py        Command / Plan / @command
-  commands.py        the 19 commands
-  chain.py           several commands in one sentence: Spans and the best split
+  __main__.py          CLI, push-to-talk loop
+  stt.py               mic recording + faster-whisper
+  jev.py               every TypeSafe call: decide(), pick_element()
+  chain.py             several commands in one sentence: candidate parts and the best split
+  engine.py            the gate, confirmations, one log line per command
+  registry.py          Command / Plan / @command
+  commands.py          the 19 commands
+  parse.py             numbers, key chords, free text
   view.py, overlay.py  the Card the engine shows, and the glass panel that draws it
-  parse.py           numbers, key chords, free text
   platforms/
-    base.py          Automation interface + DryRun wrapper
-    macos.py         AX API, Quartz events, osascript
+    base.py            Automation interface + DryRun wrapper
+    macos.py           accessibility API, Quartz events, osascript
     macos_permissions.py   the --check permission report
-tests/               gate, parser and Chain tests (Jev stubbed); CI runs them and ruff on every push
+tests/                 gate, parser and splitting tests with Jev stubbed; CI runs them and ruff on every push
 ```
 
 The OS layer sits behind `platforms/base.py:Automation`. Only macOS is implemented; a Windows or Linux port means writing one class.
 
+Design decisions are recorded as ADRs in [`docs/adr/`](docs/adr), and the project's vocabulary is in [`GLOSSARY.md`](GLOSSARY.md).
+
 ## Limitations
 
-This is a demo prototype. It isn't hardened or benchmarked. Click-by-label depends on how well each app exposes accessibility labels: native apps and Chromium browsers work well, and some Electron and game UIs expose little. Key chords assume a US keyboard layout.
+This is a prototype. It isn't hardened or benchmarked. Click-by-label depends on how well each app exposes accessibility labels: native apps and Chromium browsers work well, and some Electron and game UIs expose little. Key chords assume a US keyboard layout. Dictation that happens to sound like several commands ("type I'll open Safari and search for it") will be split.

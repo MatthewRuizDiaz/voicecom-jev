@@ -18,10 +18,13 @@ from collections.abc import Callable
 import objc
 from AppKit import (
     NSApplication,
+    NSAttributedString,
     NSBackingStoreBuffered,
     NSButton,
     NSColor,
     NSFont,
+    NSFontAttributeName,
+    NSForegroundColorAttributeName,
     NSImage,
     NSImageSymbolConfiguration,
     NSLineBreakByTruncatingTail,
@@ -57,7 +60,6 @@ BORDERLESS, NONACTIVATING = 0, 1 << 7
 STATUS_LEVEL = 25
 ALL_SPACES, STATIONARY, IGNORES_CYCLE, FULLSCREEN_AUX = 1 << 0, 1 << 4, 1 << 6, 1 << 8
 VERTICAL, HORIZONTAL = 1, 0
-SWITCH_BUTTON = 3  # NSButtonTypeSwitch: a checkbox
 ALIGN_LEADING, ALIGN_CENTER_Y = 1, 10
 SPINNER = 1
 HUD_MATERIAL, BEHIND_WINDOW, ACTIVE = 13, 0, 1
@@ -73,16 +75,23 @@ def _color(outcome: str):
 
 
 def _label(text: str, size: float = 13, weight: float = 0.0, color=None, wrap: bool = False, mono: bool = False):
-    f = NSTextField.labelWithString_(text)
+    f = NSTextField.wrappingLabelWithString_(text) if wrap else NSTextField.labelWithString_(text)
     f.setFont_(NSFont.monospacedDigitSystemFontOfSize_weight_(size, weight) if mono
                else NSFont.systemFontOfSize_weight_(size, weight))
     f.setTextColor_(color or NSColor.labelColor())
-    if wrap:
+    if wrap:  # long transcripts wrap onto up to three lines instead of being cut off
         f.setPreferredMaxLayoutWidth_(INNER)
         f.setMaximumNumberOfLines_(3)
+        f.cell().setTruncatesLastVisibleLine_(True)
+        _fixed(f, INNER)
     else:
         f.setLineBreakMode_(NSLineBreakByTruncatingTail)
     return f
+
+
+def _tinted(title: str, color):
+    return NSAttributedString.alloc().initWithString_attributes_(
+        title, {NSForegroundColorAttributeName: color, NSFontAttributeName: NSFont.systemFontOfSize_weight_(13, 0.4)})
 
 
 def _fixed(view, w: float | None = None, h: float | None = None):
@@ -378,8 +387,11 @@ class Overlay(View):
         if asking:
             cancel = NSButton.buttonWithTitle_target_action_("Cancel", self.root, "cancel:")
             run = NSButton.buttonWithTitle_target_action_("Run", self.root, "run:")
-            run.setBezelColor_(NSColor.systemRedColor() if any(s.risky for s in card.steps)
-                               else NSColor.controlAccentColor())
+            # The panel is never the key window, so AppKit draws its buttons in the inactive style and
+            # drops bezel colours; colouring the title still shows a risky Run in red.
+            if any(s.risky for s in card.steps):
+                run.setContentTintColor_(NSColor.systemRedColor())
+                run.setAttributedTitle_(_tinted("Run", NSColor.systemRedColor()))
             views.append(_fixed(_row(_spacer(), cancel, run), INNER))
         self._asking = card if asking else None
 
