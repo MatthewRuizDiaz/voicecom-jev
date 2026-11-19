@@ -17,6 +17,7 @@ class Element:
 
 
 class Automation(ABC):
+    notes_folder: str | None = None  # Notes folder for new_note (--notes-folder)
     # --- read-only (safe in --dry-run) ---
     @abstractmethod
     def frontmost_app(self) -> str: ...

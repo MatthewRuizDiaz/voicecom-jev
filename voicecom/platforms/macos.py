@@ -305,11 +305,27 @@ class MacAutomation(Automation):
     def new_note(self, text: str) -> None:
         # Through Notes' scripting interface, so it works whatever is focused. The text goes in as an
         # argument, never spliced into the script, and the body is HTML, so escape it.
+        # Where it goes: --notes-folder if set, else the folder of the note selected in Notes, else
+        # the default folder. Without this, notes always landed in the default folder, next to
+        # whatever personal notes are there.
         body = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        script = ('on run argv\n tell application "Notes"\n'
-                  '  set n to make new note with properties {body:item 1 of argv}\n'
-                  '  show n\n  activate\n end tell\nend run')
-        out = subprocess.run(["osascript", "-e", script, body], capture_output=True, text=True)
+        script = """on run argv
+ tell application "Notes"
+  set b to item 1 of argv
+  if item 2 of argv is not "" then
+   set n to make new note at folder (item 2 of argv) with properties {body:b}
+  else
+   try
+    set n to make new note at (container of item 1 of (get selection)) with properties {body:b}
+   on error
+    set n to make new note with properties {body:b}
+   end try
+  end if
+  show n
+  activate
+ end tell
+end run"""
+        out = subprocess.run(["osascript", "-e", script, body, self.notes_folder or ""], capture_output=True, text=True)
         if out.returncode != 0:
             raise RuntimeError(out.stderr.strip() or "Notes refused to create the note")
 

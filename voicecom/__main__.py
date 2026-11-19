@@ -36,6 +36,8 @@ def main() -> None:
     ap.add_argument("--whisper-model", default="base.en", help="faster-whisper model (tiny.en, base.en, small.en)")
     ap.add_argument("--model", default="jev-latest", help="TypeSafe model")
     ap.add_argument("--speak", action="store_true", help="also ask confirmations out loud")
+    ap.add_argument("--notes-folder", metavar="NAME",
+                    help="Notes folder for new notes (default: the folder you have open)")
     ap.add_argument("--no-overlay", action="store_true", help="don't show the on-screen panel (terminal log only)")
     ap.add_argument("--act", type=float, default=Thresholds.act, help="probability to run without asking")
     ap.add_argument("--ignore", type=float, default=Thresholds.ignore, help="probability below which to ignore")
@@ -58,6 +60,7 @@ def main() -> None:
     print(f"voicecom-jev on {platform.system()} {platform.mac_ver()[0] or platform.release()}"
           f"{' (dry run)' if args.dry_run else ''}: {len(REGISTRY)} commands")
     auto = get_automation(warn=not args.dry_run)
+    auto.notes_folder = args.notes_folder
     if args.dry_run:
         auto = DryRun(auto)
     typed = args.text or args.repl
