@@ -179,7 +179,8 @@ NOTE_LEADS = ("open the notes app and type", "open the notes app and write", "op
          takes_rest=True)
 def new_note(ctx: Ctx):
     text = parse.after(ctx.transcript, *NOTE_LEADS, keep_end=True)
-    text = re.sub(r"^(saying|that says|that|with|and type|and write|to say)\b[\s:,]*", "", text, flags=re.I)
+    lead_in = r"^(saying|that says|that|with|and type|and write|to say|put in it|containing)\b[\s:,]*"
+    text = re.sub(lead_in, "", text, flags=re.I)
     if text.endswith(".") and not text.endswith(".."):
         text = text[:-1]
     if text.lower() == parse.clean(ctx.transcript).lower():  # nothing matched: don't put the command in the note

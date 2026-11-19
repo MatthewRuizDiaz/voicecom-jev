@@ -179,13 +179,31 @@ class MacAutomation(Automation):
             ev = Quartz.CGEventCreateMouseEvent(None, kind, point, Quartz.kCGMouseButtonLeft)
             Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
 
+    def _window_center(self):
+        """Centre of the active app's focused window, in global top-left coordinates, or None."""
+        _, window = self._focused_window()
+        pos, size = (_attr(window, "AXPosition"), _attr(window, "AXSize")) if window is not None else (None, None)
+        if pos is None or size is None:
+            return None
+        _, p = AX.AXValueGetValue(pos, AX.kAXValueCGPointType, None)
+        _, z = AX.AXValueGetValue(size, AX.kAXValueCGSizeType, None)
+        return Quartz.CGPointMake(p.x + z.width / 2, p.y + z.height / 2)
+
     def scroll(self, notches: int) -> None:
-        # Wheel events are positive for "up"; post one 3-line notch at a time so it feels smooth.
-        step = -1 if notches > 0 else 1
-        for _ in range(abs(notches)):
+        # The wheel scrolls whatever is under the event's location, which is normally the pointer, so
+        # with Safari on the left and the pointer over Notes (or over the overlay) nothing visible
+        # moved. Aim each event at the active window's centre, then put the pointer back.
+        target = self._window_center()
+        pointer = Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
+        step = -1 if notches > 0 else 1  # wheel events are positive for "up"
+        for _ in range(abs(notches)):  # one 3-line notch at a time, so it feels smooth
             ev = Quartz.CGEventCreateScrollWheelEvent(None, Quartz.kCGScrollEventUnitLine, 1, step * 3)
+            if target is not None:
+                Quartz.CGEventSetLocation(ev, target)
             Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
             time.sleep(0.015)
+        if target is not None:
+            Quartz.CGWarpMouseCursorPosition(pointer)
 
     def press(self, keys: list[str]) -> None:
         mods = [k for k in keys if k in MODIFIERS]
