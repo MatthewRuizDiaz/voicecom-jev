@@ -305,9 +305,8 @@ class MacAutomation(Automation):
     def new_note(self, text: str) -> None:
         # Through Notes' scripting interface, so it works whatever is focused. The text goes in as an
         # argument, never spliced into the script, and the body is HTML, so escape it.
-        # Where it goes: --notes-folder if set, else the folder of the note selected in Notes, else
-        # the default folder. Without this, notes always landed in the default folder, next to
-        # whatever personal notes are there.
+        # Where it goes: --notes-folder if set; else the folder open in Notes (its window title reads
+        # "demo – 3 notes"), so a demo folder keeps personal notes off screen; else the default folder.
         body = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         script = """on run argv
  tell application "Notes"
@@ -316,7 +315,7 @@ class MacAutomation(Automation):
    set n to make new note at folder (item 2 of argv) with properties {body:b}
   else
    try
-    set n to make new note at (container of item 1 of (get selection)) with properties {body:b}
+    set n to make new note at folder (item 3 of argv) with properties {body:b}
    on error
     set n to make new note with properties {body:b}
    end try
@@ -325,9 +324,20 @@ class MacAutomation(Automation):
   activate
  end tell
 end run"""
-        out = subprocess.run(["osascript", "-e", script, body, self.notes_folder or ""], capture_output=True, text=True)
+        args = [body, self.notes_folder or "", self._open_notes_folder() or ""]
+        out = subprocess.run(["osascript", "-e", script, *args], capture_output=True, text=True)
         if out.returncode != 0:
             raise RuntimeError(out.stderr.strip() or "Notes refused to create the note")
+
+    def _open_notes_folder(self) -> str | None:
+        """The folder shown in Notes' main window, from its title ("demo – 3 notes"), if Notes is running."""
+        for app in NSWorkspace.sharedWorkspace().runningApplications():
+            if app.bundleIdentifier() == "com.apple.Notes":
+                for window in _attr(AX.AXUIElementCreateApplication(app.processIdentifier()), "AXWindows") or []:
+                    title = str(_attr(window, "AXTitle") or "")
+                    if " – " in title:
+                        return title.rsplit(" – ", 1)[0]
+        return None
 
     def close_tab(self) -> None:
         self.press(["cmd", "w"])
