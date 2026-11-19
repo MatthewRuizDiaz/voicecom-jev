@@ -179,22 +179,26 @@ class MacAutomation(Automation):
             ev = Quartz.CGEventCreateMouseEvent(None, kind, point, Quartz.kCGMouseButtonLeft)
             Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
 
-    def _window_center(self):
-        """Centre of the active app's focused window, in global top-left coordinates, or None."""
+    def _scroll_point(self, pointer):
+        """Where to aim the wheel: the pointer if it's over the active window (you're pointing at what
+        you want scrolled), else a point a third of the way across it, where a page's main column
+        usually is. Dead centre often lands on a sidebar map that zooms instead of scrolling."""
         _, window = self._focused_window()
         pos, size = (_attr(window, "AXPosition"), _attr(window, "AXSize")) if window is not None else (None, None)
         if pos is None or size is None:
             return None
         _, p = AX.AXValueGetValue(pos, AX.kAXValueCGPointType, None)
         _, z = AX.AXValueGetValue(size, AX.kAXValueCGSizeType, None)
-        return Quartz.CGPointMake(p.x + z.width / 2, p.y + z.height / 2)
+        if p.x <= pointer.x <= p.x + z.width and p.y <= pointer.y <= p.y + z.height:
+            return pointer
+        return Quartz.CGPointMake(p.x + z.width / 3, p.y + z.height / 2)
 
     def scroll(self, notches: int) -> None:
         # The wheel scrolls whatever is under the event's location, which is normally the pointer, so
         # with Safari on the left and the pointer over Notes (or over the overlay) nothing visible
-        # moved. Aim each event at the active window's centre, then put the pointer back.
-        target = self._window_center()
+        # moved. Aim each event inside the active window (see _scroll_point), then put the pointer back.
         pointer = Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
+        target = self._scroll_point(pointer)
         step = -1 if notches > 0 else 1  # wheel events are positive for "up"
         for _ in range(abs(notches)):  # one 3-line notch at a time, so it feels smooth
             ev = Quartz.CGEventCreateScrollWheelEvent(None, Quartz.kCGScrollEventUnitLine, 1, step * 3)
